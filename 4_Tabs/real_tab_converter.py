@@ -5,7 +5,7 @@ Maps MIDI pitches to actual guitar string/fret positions intelligently
 
 import jams
 import pretty_midi
-from music21 import stream, note, tempo, meter, clef
+from music21 import stream, note, tempo, meter, clef, articulations, expressions
 
 
 # Standard guitar tuning (MIDI pitch for each open string)
@@ -199,10 +199,51 @@ def jams_to_musicxml_real(jam, output_xml='output.xml', tempo_bpm=120):
         midi_pitch = val['pitch']
         string_num = val['string']
         fret_num = val['fret']
+
+        # Extract techniques
+        techniques = val.get('techniques', [])  # Extract techniques from JAMS
         
         # Create note with correct pitch
         n = note.Note()
         n.pitch.midi = midi_pitch
+
+        # Apply techniques to note
+        if techniques:
+            print(f"  Processing {len(techniques)} technique(s)")
+            for tech in techniques:
+                if not tech:  # Skip None or empty values
+                    print(f"  Skipping empty technique: {tech}")  # ← More specific
+                    continue
+                
+                # Map guitar techniques to music21 notation
+                if tech in ['hammer-on', 'hammer_on']:
+                    print("Hammer on detected")
+                    n.articulations.append(articulations.Tenuto())
+                    n.expressions.append(expressions.TextExpression('H'))
+                
+                elif tech in ['pull-off', 'pull_off']:
+                    print("Pull-off detected")
+                    n.articulations.append(articulations.Tenuto())
+                    n.expressions.append(expressions.TextExpression('P'))
+                
+                elif tech == 'bend':
+                    print("bend detected")
+                    n.articulations.append(articulations.Accent())
+                    n.expressions.append(expressions.TextExpression('B'))
+                
+                elif tech == 'slide':
+                    print("slide detected")
+                    n.expressions.append(expressions.TextExpression('/'))
+                
+                elif tech == 'vibrato':
+                    print("Vibrato detected")
+                    n.expressions.append(expressions.TextExpression('~'))
+                
+                elif tech == 'harmonic':
+                    print("Harmonic detected")
+                    n.articulations.append(articulations.Harmonic())
+        else:
+            print("No techniques found")
         
         # Quantize duration to standard values
         duration_beats = obs.duration / beat_sec
