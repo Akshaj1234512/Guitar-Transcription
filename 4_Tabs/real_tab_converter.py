@@ -1,0 +1,382 @@
+"""
+Real MIDI to Tablature Converter
+Maps MIDI pitches to actual guitar string/fret positions intelligently
+"""
+
+import jams
+import pretty_midi
+from music21 import stream, note, tempo, meter, clef
+
+
+# Standard guitar tuning (MIDI pitch for each open string)
+STANDARD_TUNING = {
+    6: 40,  # E2 (low E)
+    5: 45,  # A2
+    4: 50,  # D3
+    3: 55,  # G3
+    2: 59,  # B3
+    1: 64   # E4 (high e)
+}
+
+
+def midi_pitch_to_guitar_positions(midi_pitch, tuning=STANDARD_TUNING, max_fret=12):
+    """
+    Find all possible (string, fret) positions for a given MIDI pitch.
+    
+    Args:
+        midi_pitch: MIDI note number (e.g., 60 = middle C)
+        tuning: Dictionary of {string_number: open_string_midi_pitch}
+        max_fret: Maximum fret to consider
+    
+    Returns:
+        List of (string, fret) tuples, sorted by preference
+    """
+    positions = []
+    
+    for string_num in range(1, 7):  # Strings 1-6
+        open_pitch = tuning[string_num]
+        fret = midi_pitch - open_pitch
+        
+        # Valid if fret is 0-12 (or your max_fret)
+        if 0 <= fret <= max_fret:
+            positions.append((string_num, fret))
+    
+    # Sort by preference: middle strings first, lower frets preferred
+    # This creates more natural fingering
+    def position_score(pos):
+        string, fret = pos
+        # Prefer middle strings (3, 4) and lower frets
+        string_penalty = abs(string - 3.5)  # Prefer strings 3-4
+        fret_penalty = fret * 0.1  # Slight preference for lower frets
+        return string_penalty + fret_penalty
+    
+    positions.sort(key=position_score)
+    return positions
+
+
+def choose_best_position(midi_pitch, previous_position=None, tuning=STANDARD_TUNING):
+    """
+    Choose the best string/fret position for a pitch.
+    Takes into account the previous position to minimize hand movement.
+    
+    Args:
+        midi_pitch: MIDI note number
+        previous_position: Previous (string, fret) tuple, or None
+        tuning: Guitar tuning
+    
+    Returns:
+        (string, fret) tuple
+    """
+    positions = midi_pitch_to_guitar_positions(midi_pitch, tuning)
+    
+    if not positions:
+        # Pitch out of range - use closest approximation
+        # Find the closest string
+        closest_string = min(tuning.keys(), 
+                           key=lambda s: abs(tuning[s] - midi_pitch))
+        fret = max(0, min(12, midi_pitch - tuning[closest_string]))
+        return (closest_string, fret)
+    
+    if previous_position is None:
+        # No previous position - use most natural position
+        return positions[0]
+    
+    # Choose position closest to previous position (minimize hand movement)
+    prev_string, prev_fret = previous_position
+    
+    def distance_score(pos):
+        string, fret = pos
+        string_distance = abs(string - prev_string)
+        fret_distance = abs(fret - prev_fret)
+        # Weight fret distance more (moving along frets is harder than changing strings)
+        return fret_distance * 2 + string_distance
+    
+    return min(positions, key=distance_score)
+
+
+def midi_to_jams_with_tablature(midi_path, tuning=STANDARD_TUNING):
+    """
+    Convert MIDI file to JAMS with intelligent tablature mapping.
+    
+    Args:
+        midi_path: Path to MIDI file
+        tuning: Guitar tuning dictionary
+    
+    Returns:
+        JAMS object with both note_midi and tab_note annotations
+    """
+    # Load MIDI
+    pm = pretty_midi.PrettyMIDI(midi_path)
+    guitar_notes = pm.instruments[0].notes
+    
+    # Create JAMS
+    jam = jams.JAMS()
+    
+    # Add note_midi annotation
+    note_ann = jams.Annotation(namespace='note_midi')
+    for n in guitar_notes:
+        note_ann.append(
+            time=n.start,
+            duration=n.end - n.start,
+            value=n.pitch,
+            confidence=n.velocity / 127
+        )
+    jam.annotations.append(note_ann)
+    
+    # Add tab_note annotation with intelligent string/fret mapping
+    tab_ann = jams.Annotation(namespace='tab_note')
+    
+    previous_position = None
+    for n in guitar_notes:
+        # Find best position for this pitch
+        string, fret = choose_best_position(n.pitch, previous_position, tuning)
+        previous_position = (string, fret)
+        
+        value = {
+            "pitch": n.pitch,
+            "string": string,
+            "fret": fret,
+            "techniques": []  # No techniques from MIDI
+        }
+        
+        tab_ann.append(
+            time=n.start,
+            duration=n.end - n.start,
+            value=value,
+            confidence=n.velocity / 127
+        )
+    
+    jam.annotations.append(tab_ann)
+    
+    print(f"Converted {len(guitar_notes)} notes to tablature")
+    print(f"Pitch range: {min(n.pitch for n in guitar_notes)} - {max(n.pitch for n in guitar_notes)}")
+    
+    return jam
+
+
+def jams_to_musicxml_real(jam, output_xml='output.xml', tempo_bpm=120):
+    """
+    Convert JAMS with real tablature to MusicXML.
+    Uses actual pitch information for correct notation.
+    
+    Args:
+        jam: JAMS object with tab_note annotation
+        output_xml: Output MusicXML file path
+        tempo_bpm: Tempo in BPM
+    
+    Returns:
+        Path to created XML file
+    """
+    # Find tab_note annotation
+    tab_notes = None
+    for ann in jam.annotations:
+        if ann.namespace == "tab_note":
+            tab_notes = ann
+            break
+    
+    if tab_notes is None:
+        raise ValueError("No tab_note annotation found")
+    
+    print(f"Converting {len(tab_notes.data)} notes to MusicXML...")
+    
+    # Create music21 score
+    score = stream.Score()
+    part = stream.Part()
+    
+    # Add metadata
+    part.insert(0, tempo.MetronomeMark(number=tempo_bpm))
+    part.insert(0, meter.TimeSignature('4/4'))
+    part.insert(0, clef.TabClef())
+    
+    # Beat duration
+    beat_sec = 60.0 / tempo_bpm
+    
+    # Convert notes
+    for obs in tab_notes.data:
+        val = obs.value
+        
+        # Use actual pitch from MIDI
+        midi_pitch = val['pitch']
+        string_num = val['string']
+        fret_num = val['fret']
+        
+        # Create note with correct pitch
+        n = note.Note()
+        n.pitch.midi = midi_pitch
+        
+        # Quantize duration to standard values
+        duration_beats = obs.duration / beat_sec
+        # Round to nearest eighth note
+        quantized = round(duration_beats * 2) / 2
+        if quantized < 0.5:
+            quantized = 0.5  # Minimum eighth note
+        n.quarterLength = quantized
+        
+        # Add tablature info
+        n.editorial.stringNumber = string_num
+        n.editorial.fretNumber = fret_num
+        
+        # Quantize time position
+        time_beats = obs.time / beat_sec
+        quantized_time = round(time_beats * 2) / 2
+        
+        part.insert(quantized_time, n)
+    
+    # Create measures
+    part.makeMeasures(inPlace=True)
+    score.append(part)
+    
+    # Write to MusicXML
+    try:
+        score.write('musicxml', fp=output_xml)
+        print(f"✓ Created {output_xml}")
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Trying with makeNotation...")
+        score.write('musicxml', fp=output_xml, makeNotation=True)
+        print(f"✓ Created {output_xml} (with notation fixes)")
+    
+    return output_xml
+
+
+def complete_midi_to_tab_workflow(midi_path, output_xml='tablature.xml', tempo_bpm=None):
+    """
+    Complete workflow: MIDI → intelligent tablature → MusicXML
+    
+    Args:
+        midi_path: Path to MIDI file
+        output_xml: Output MusicXML path
+        tempo_bpm: Tempo (if None, will try to detect from MIDI)
+    
+    Returns:
+        Path to created XML file
+    """
+    print("=" * 70)
+    print("MIDI to Tablature - Complete Workflow")
+    print("=" * 70)
+    
+    # Step 1: Load MIDI and detect tempo if not provided
+    if tempo_bpm is None:
+        import pretty_midi
+        pm = pretty_midi.PrettyMIDI(midi_path)
+        # Try to get tempo from MIDI
+        tempo_changes = pm.get_tempo_changes()
+        if len(tempo_changes[1]) > 0:
+            tempo_bpm = int(tempo_changes[1][0])
+            print(f"\nDetected tempo: {tempo_bpm} BPM")
+        else:
+            tempo_bpm = 120
+            print(f"\nUsing default tempo: {tempo_bpm} BPM")
+    
+    # Step 2: Convert MIDI to JAMS with intelligent tablature
+    print(f"\n1. Converting MIDI to tablature...")
+    jam = midi_to_jams_with_tablature(midi_path)
+    
+    # Step 3: Convert to MusicXML
+    print(f"\n2. Generating MusicXML...")
+    output_file = jams_to_musicxml_real(jam, output_xml, tempo_bpm)
+    
+    print("\n" + "=" * 70)
+    print("✓ Complete!")
+    print(f"Output: {output_file}")
+    print("=" * 70)
+    print("\nNext steps:")
+    print("1. Open in MuseScore: musescore", output_file)
+    print("2. Export to PDF: File → Export → PDF")
+    print("=" * 70)
+    
+    return output_file
+
+
+# =============================================================================
+# ADVANCED: Position optimization for better fingering
+# =============================================================================
+
+def optimize_tablature_positions(jam, max_stretch=4):
+    """
+    Optimize string/fret positions for better playability.
+    Tries to keep notes within reasonable hand positions.
+    
+    Args:
+        jam: JAMS object with tab_note annotation
+        max_stretch: Maximum fret stretch (typically 4 frets)
+    
+    Returns:
+        Modified JAMS object with optimized positions
+    """
+    # Find tab annotation
+    tab_ann = None
+    for ann in jam.annotations:
+        if ann.namespace == "tab_note":
+            tab_ann = ann
+            break
+    
+    if not tab_ann or len(tab_ann.data) < 2:
+        return jam
+    
+    print("Optimizing tablature positions for playability...")
+    
+    # Re-calculate positions considering hand position
+    notes = list(tab_ann.data)
+    current_position = None  # (center_fret, string)
+    
+    for i, obs in enumerate(notes):
+        pitch = obs.value['pitch']
+        
+        # Get all possible positions
+        positions = midi_pitch_to_guitar_positions(pitch)
+        
+        if not positions:
+            continue
+        
+        if current_position is None:
+            # First note - choose most natural position
+            string, fret = positions[0]
+            current_position = fret
+        else:
+            # Choose position within max_stretch of current position
+            valid_positions = [
+                (s, f) for s, f in positions
+                if abs(f - current_position) <= max_stretch
+            ]
+            
+            if valid_positions:
+                # Choose closest to current position
+                string, fret = min(valid_positions, 
+                                  key=lambda p: abs(p[1] - current_position))
+            else:
+                # No position within reach - need to shift hand position
+                string, fret = positions[0]
+                current_position = fret
+        
+        # Update the note
+        obs.value['string'] = string
+        obs.value['fret'] = fret
+    
+    print("✓ Positions optimized")
+    return jam
+
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("Real MIDI to Tablature Converter")
+    print("=" * 70)
+    print()
+    print("USAGE:")
+    print()
+    print("# Simple - one line:")
+    print("complete_midi_to_tab_workflow('song.mid', 'output.xml')")
+    print()
+    print("# With tempo:")
+    print("complete_midi_to_tab_workflow('song.mid', 'output.xml', tempo_bpm=108)")
+    print()
+    print("# Advanced - with optimization:")
+    print("jam = midi_to_jams_with_tablature('song.mid')")
+    print("jam = optimize_tablature_positions(jam)")
+    print("jams_to_musicxml_real(jam, 'output.xml', tempo_bpm=108)")
+    print()
+    print("=" * 70)
