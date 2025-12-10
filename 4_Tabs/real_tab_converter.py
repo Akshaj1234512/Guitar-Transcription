@@ -217,14 +217,22 @@ def jams_to_musicxml_real(jam, output_xml='output.xml', tempo_bpm=120):
                 
                 # Map guitar techniques to music21 notation
                 if tech in ['hammer-on', 'hammer_on']:
-                    print("Hammer on detected")
-                    n.articulations.append(articulations.Tenuto())
+                    print("hammer-on detected")
                     n.expressions.append(expressions.TextExpression('H'))
-                
+                    
+                    # Create slur from previous note to this one
+                    if previous_note is not None:
+                        slur = spanner.Slur(previous_note, n)
+                        part.insert(0, slur)  # Add slur to the part
+            
+                # PULL-OFF: Same as hammer-on
                 elif tech in ['pull-off', 'pull_off']:
-                    print("Pull-off detected")
-                    n.articulations.append(articulations.Tenuto())
+                    print("pull off detected")
                     n.expressions.append(expressions.TextExpression('P'))
+                    
+                    if previous_note is not None:
+                        slur = spanner.Slur(previous_note, n)
+                        part.insert(0, slur)
                 
                 elif tech == 'bend':
                     print("bend detected")
@@ -242,8 +250,6 @@ def jams_to_musicxml_real(jam, output_xml='output.xml', tempo_bpm=120):
                 elif tech == 'harmonic':
                     print("Harmonic detected")
                     n.articulations.append(articulations.Harmonic())
-        else:
-            print("No techniques found")
         
         # Quantize duration to standard values
         duration_beats = obs.duration / beat_sec
