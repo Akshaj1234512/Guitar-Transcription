@@ -16,21 +16,21 @@
     </scaling>
   </defaults>
   <part-list>
-    <score-part id="P4af90a68369d864a47454a56ad1cb615">
+    <score-part id="P4704306249bbc8dd7c6eeeb580363e06">
       <part-name>Classical Guitar</part-name>
       <part-abbreviation>Guit.</part-abbreviation>
-      <score-instrument id="I58e08221b5e9fe0ef2b8d38b796ac44a">
+      <score-instrument id="I27afb51e4e4e415e23881e2cfc79fdc0">
         <instrument-name>Classical Guitar</instrument-name>
         <instrument-abbreviation>Guit.</instrument-abbreviation>
       <instrument-sound>pluck.guitar.nylon-string</instrument-sound></score-instrument>
-      <midi-instrument id="I58e08221b5e9fe0ef2b8d38b796ac44a">
+      <midi-instrument id="I27afb51e4e4e415e23881e2cfc79fdc0">
         <midi-channel>1</midi-channel>
         <midi-program>25</midi-program>
       </midi-instrument>
     </score-part>
   </part-list>
   <!--=========================== Part 1 ===========================-->
-  <part id="P4af90a68369d864a47454a56ad1cb615">
+  <part id="P4704306249bbc8dd7c6eeeb580363e06">
     <!--========================= Measure 1 ==========================-->
     <measure implicit="no" number="1">
       <attributes>
@@ -44,15 +44,6 @@
           <line>5</line>
         </clef>
       </attributes>
-      <direction>
-        <direction-type>
-          <metronome parentheses="no">
-            <beat-unit>quarter</beat-unit>
-            <per-minute>129</per-minute>
-          </metronome>
-        </direction-type>
-        <sound tempo="129"/>
-      </direction>
       <note>
         <pitch>
           <step>E</step>
@@ -81,7 +72,7 @@
         <duration>10080</duration>
         <type>quarter</type>
       </note>
-      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
+      <note>
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -91,64 +82,21 @@
         <type>quarter</type>
         <accidental>flat</accidental>
         <notations>
-          <technical>
-            <harmonic/>
-          </technical>
+          <slur number="1" type="start"/>
         </notations>
       </note>
       <note>
         <pitch>
-          <step>B</step>
+          <step>E</step>
           <alter>-1</alter>
           <octave>3</octave>
         </pitch>
         <duration>20160</duration>
         <type>half</type>
-        <accidental>flat</accidental>
         <notations>
           <other-ornament/>
+          <slur number="1" type="stop"/>
         </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>E</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>20160</duration>
-        <type>half</type>
-        <accidental>flat</accidental>
-        <notations>
-          <technical>
-            </technical>
-        </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
-      <note>
-        <pitch>
-          <step>G</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
-        <accidental>flat</accidental>
       </note>
     </measure>
     <!--========================= Measure 2 ==========================-->
@@ -162,6 +110,8 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
+        <stem>down</stem>
+        <beam number="1">begin</beam>
       </note>
       <note>
         <chord/>
@@ -188,14 +138,10 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
+        <stem>down</stem>
+        <beam number="1">end</beam>
         <notations>
           <other-ornament/>
-          <slur number="1" type="start"/>
-          <technical>
-            <bend>
-              <bend-alter>0.5</bend-alter>
-            </bend>
-          </technical>
         </notations>
       </note>
       <note>
@@ -209,7 +155,6 @@
         <accidental>flat</accidental>
         <notations>
           <other-ornament/>
-          <slur number="1" type="stop"/>
         </notations>
       </note>
       <note>
@@ -267,17 +212,6 @@
         <duration>10080</duration>
         <type>quarter</type>
         <accidental>flat</accidental>
-        <notations>
-          <other-ornament/>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
       </note>
     </measure>
     <!--========================= Measure 3 ==========================-->
@@ -291,9 +225,6 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-        <notations>
-          <slur number="2" type="start"/>
-        </notations>
       </note>
       <note>
         <chord/>
@@ -320,61 +251,19 @@
         </pitch>
         <duration>10080</duration>
         <type>quarter</type>
-        <notations>
-          <other-ornament/>
-          <slur number="2" type="stop"/>
-        </notations>
       </note>
-      <note>
-        <pitch>
-          <step>E</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>20160</duration>
-        <type>half</type>
-        <accidental>flat</accidental>
-        <notations>
-          <other-ornament/>
-        </notations>
-      </note>
-      <note>
+      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
         <pitch>
           <step>D</step>
           <octave>4</octave>
         </pitch>
         <duration>10080</duration>
         <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>flat</accidental>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>flat</accidental>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>F</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
+        <notations>
+          <technical>
+            <harmonic/>
+          </technical>
+        </notations>
       </note>
       <note>
         <pitch>
@@ -383,6 +272,14 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
+        <notations>
+          <other-ornament/>
+          <technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        </notations>
       </note>
       <note>
         <rest/>
@@ -446,38 +343,15 @@
         <type>half</type>
         <accidental>flat</accidental>
         <notations>
+          <other-ornament/>
           <technical>
-            </technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
         </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
-      <note>
-        <pitch>
-          <step>E</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>20160</duration>
-        <type>half</type>
-        <accidental>flat</accidental>
       </note>
       <note>
-        <pitch>
-          <step>F</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
         <pitch>
           <step>B</step>
           <alter>-1</alter>
@@ -485,12 +359,6 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-        <accidental>flat</accidental>
-        <notations>
-          <technical>
-            <harmonic/>
-          </technical>
-        </notations>
       </note>
       <note>
         <rest/>
@@ -506,6 +374,14 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>sharp</accidental>
+        <notations>
+          <other-ornament/>
+          <technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        </notations>
       </note>
     </measure>
     <!--========================= Measure 5 ==========================-->
@@ -542,77 +418,11 @@
         <pitch>
           <step>G</step>
           <alter>1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>sharp</accidental>
-        <notations>
-          <other-ornament/>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>G</step>
-          <alter>1</alter>
           <octave>2</octave>
         </pitch>
         <duration>20160</duration>
         <type>half</type>
         <accidental>sharp</accidental>
-        <notations>
-          <other-ornament/>
-          <technical>
-            <bend>
-              <bend-alter>0.5</bend-alter>
-            </bend>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>F</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>C</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>G</step>
-          <alter>1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>sharp</accidental>
-      </note>
-      <note>
-        <pitch>
-          <step>G</step>
-          <alter>1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
-        <notations>
-          <other-ornament/>
-          <technical>
-            <bend>
-              <bend-alter>0.5</bend-alter>
-            </bend>
-          </technical>
-        </notations>
       </note>
       <note>
         <pitch>
@@ -622,7 +432,8 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-        <accidental>sharp</accidental>
+        <stem>down</stem>
+        <beam number="1">begin</beam>
       </note>
       <note>
         <pitch>
@@ -631,6 +442,8 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
+        <stem>down</stem>
+        <beam number="1">end</beam>
       </note>
       <note>
         <chord/>
@@ -709,7 +522,7 @@
         <duration>5040</duration>
         <type>eighth</type>
       </note>
-      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
+      <note>
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -718,7 +531,17 @@
         <duration>10080</duration>
         <type>quarter</type>
         <accidental>flat</accidental>
+      </note>
+      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
+        <pitch>
+          <step>E</step>
+          <alter>-1</alter>
+          <octave>4</octave>
+        </pitch>
+        <duration>5040</duration>
+        <type>eighth</type>
         <notations>
+          <slur number="2" type="start"/>
           <technical>
             <harmonic/>
           </technical>
@@ -726,32 +549,17 @@
       </note>
       <note>
         <pitch>
-          <step>G</step>
-          <alter>1</alter>
+          <step>A</step>
           <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>sharp</accidental>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>C</step>
-          <octave>5</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-      </note>
-      <note>
-        <pitch>
-          <step>E</step>
-          <alter>-1</alter>
-          <octave>4</octave>
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-        <accidental>flat</accidental>
+        <stem>down</stem>
+        <beam number="1">begin</beam>
+        <notations>
+          <other-ornament/>
+          <slur number="2" type="stop"/>
+        </notations>
       </note>
       <note>
         <pitch>
@@ -760,14 +568,8 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-      </note>
-      <note>
-        <pitch>
-          <step>A</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
+        <stem>down</stem>
+        <beam number="1">end</beam>
       </note>
       <note>
         <chord/>
@@ -799,12 +601,10 @@
         <chord/>
         <pitch>
           <step>G</step>
-          <alter>0</alter>
           <octave>4</octave>
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-        <accidental>natural</accidental>
       </note>
       <note>
         <chord/>
@@ -978,17 +778,7 @@
         <type>quarter</type>
         <dot/>
       </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
-        <accidental>flat</accidental>
-      </note>
-      <note>
+      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -1000,38 +790,10 @@
         <accidental>flat</accidental>
         <notations>
           <slur number="3" type="start"/>
+          <technical>
+            <harmonic/>
+          </technical>
         </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>flat</accidental>
-        <notations>
-          <other-ornament/>
-          <slur number="3" type="stop"/>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>G</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
       </note>
       <note>
         <pitch>
@@ -1042,6 +804,10 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
+        <notations>
+          <other-ornament/>
+          <slur number="3" type="stop"/>
+        </notations>
       </note>
     </measure>
     <!--========================= Measure 9 ==========================-->
@@ -1082,66 +848,6 @@
         <type>half</type>
         <dot/>
         <accidental>flat</accidental>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>flat</accidental>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>20160</duration>
-        <type>half</type>
-        <notations>
-          <slur number="4" type="start"/>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>F</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <notations>
-          <other-ornament/>
-          <slur number="4" type="stop"/>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>10080</duration>
-        <type>quarter</type>
-        <accidental>flat</accidental>
-        <notations>
-          <slur number="5" type="start"/>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>5040</duration>
-        <type>eighth</type>
-        <accidental>flat</accidental>
-        <notations>
-          <other-ornament/>
-          <slur number="5" type="stop"/>
-        </notations>
       </note>
     </measure>
     <!--========================= Measure 10 =========================-->
@@ -1204,9 +910,6 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>sharp</accidental>
-        <notations>
-          <slur number="6" type="start"/>
-        </notations>
       </note>
       <note>
         <chord/>
@@ -1237,10 +940,10 @@
         <duration>10080</duration>
         <type>quarter</type>
         <notations>
-          <other-ornament/>
-          <slur number="6" type="stop"/>
+          <technical>
+            </technical>
         </notations>
-      </note>
+      <?GP <root><vibrato type="Slight"/></root>?></note>
       <note>
         <pitch>
           <step>D</step>
@@ -1470,9 +1173,6 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-        <notations>
-          <slur number="1" type="start"/>
-        </notations>
       </note>
       <note>
         <chord/>
@@ -1505,42 +1205,8 @@
         <duration>20160</duration>
         <type>half</type>
         <notations>
-          <other-ornament/>
-          <slur number="1" type="stop"/>
+          <slur number="4" type="start"/>
         </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>3</octave>
-        </pitch>
-        <duration>15120</duration>
-        <type>quarter</type>
-        <dot/>
-        <accidental>flat</accidental>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>G</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>15120</duration>
-        <type>quarter</type>
-        <dot/>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
-          <alter>-1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>15120</duration>
-        <type>quarter</type>
-        <dot/>
-        <accidental>flat</accidental>
       </note>
       <note>
         <pitch>
@@ -1549,10 +1215,11 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
+        <notations>
+          <other-ornament/>
+          <slur number="4" type="stop"/>
+        </notations>
       </note>
-      <barline location="right">
-        <bar-style>light-heavy</bar-style>
-      </barline>
     </measure>
   </part>
 </score-partwise>
