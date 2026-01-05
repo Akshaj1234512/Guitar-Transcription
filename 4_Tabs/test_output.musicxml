@@ -5,7 +5,7 @@
   <identification>
     <creator type="composer">Music21</creator>
     <encoding>
-      <encoding-date>2026-01-04</encoding-date>
+      <encoding-date>2026-01-05</encoding-date>
       <software>music21 v.9.9.1</software>
     </encoding>
   </identification>
@@ -16,21 +16,21 @@
     </scaling>
   </defaults>
   <part-list>
-    <score-part id="Pb8eabc47477f5e09705226adbd491adb">
+    <score-part id="P2852d9ada58ff0df1ba10fec4e596378">
       <part-name>Classical Guitar</part-name>
       <part-abbreviation>Guit.</part-abbreviation>
-      <score-instrument id="I4149aee61e72dc0bf0f4278379bff790">
+      <score-instrument id="I8bedcf1f2c52d43d7fe0eaa9382bdd57">
         <instrument-name>Classical Guitar</instrument-name>
         <instrument-abbreviation>Guit.</instrument-abbreviation>
       <instrument-sound>pluck.guitar.nylon-string</instrument-sound></score-instrument>
-      <midi-instrument id="I4149aee61e72dc0bf0f4278379bff790">
+      <midi-instrument id="I8bedcf1f2c52d43d7fe0eaa9382bdd57">
         <midi-channel>1</midi-channel>
         <midi-program>25</midi-program>
       </midi-instrument>
     </score-part>
   </part-list>
   <!--=========================== Part 1 ===========================-->
-  <part id="Pb8eabc47477f5e09705226adbd491adb">
+  <part id="P2852d9ada58ff0df1ba10fec4e596378">
     <!--========================= Measure 1 ==========================-->
     <measure implicit="no" number="1">
       <attributes>
@@ -53,7 +53,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <accidental>flat</accidental>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><string>4</string><fret>1</fret></technical><slur type="start"/></notations></note>
+      <notations><technical><hammer-on type="start" number="1">H</hammer-on></technical><slur type="start"/></notations></note>
       <note>
         <chord/>
         <pitch>
@@ -62,7 +62,7 @@
         </pitch>
         <duration>10080</duration>
         <type>quarter</type>
-      <notations><technical><hammer-on type="stop" number="1"/><string>4</string><fret>1</fret></technical><slur type="stop"/></notations></note>
+      </note>
       <note>
         <chord/>
         <pitch>
@@ -81,7 +81,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <accidental>flat</accidental>
-      </note>
+      <notations><technical><hammer-on type="start" number="1">H</hammer-on></technical><slur type="start"/></notations></note>
       <note>
         <pitch>
           <step>E</step>
@@ -90,7 +90,7 @@
         </pitch>
         <duration>20160</duration>
         <type>half</type>
-      </note>
+      <notations><technical><hammer-on type="stop" number="1"/></technical><slur type="stop"/></notations></note>
     </measure>
     <!--========================= Measure 2 ==========================-->
     <measure implicit="no" number="2">
@@ -105,7 +105,7 @@
         <accidental>flat</accidental>
         <stem>down</stem>
         <beam number="1">begin</beam>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><string>4</string><fret>1</fret></technical><slur type="start"/></notations></note>
+      </note>
       <note>
         <chord/>
         <pitch>
@@ -133,7 +133,15 @@
         <type>eighth</type>
         <stem>down</stem>
         <beam number="1">end</beam>
-      <notations><technical><hammer-on type="stop" number="1"/><string>4</string><fret>12</fret></technical><slur type="stop"/></notations></note>
+        <notations>
+          <other-ornament/>
+          <technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        </notations>
+      </note>
       <note>
         <pitch>
           <step>E</step>
@@ -143,14 +151,6 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-        <notations>
-          <other-ornament/>
-          <technical>
-            <bend>
-              <bend-alter>0.5</bend-alter>
-            </bend>
-          </technical>
-        </notations>
       </note>
       <note>
         <pitch>
@@ -186,7 +186,7 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-      </note>
+      <notations><technical><pull-off type="start" number="1">P</pull-off></technical><slur type="start"/></notations></note>
       <note>
         <chord/>
         <pitch>
@@ -207,11 +207,7 @@
         <duration>10080</duration>
         <type>quarter</type>
         <accidental>flat</accidental>
-        <notations>
-          <technical>
-            </technical>
-        </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
+      <notations><technical><pull-off type="stop" number="1"/></technical><slur type="stop"/></notations></note>
     </measure>
     <!--========================= Measure 3 ==========================-->
     <measure implicit="no" number="3">
@@ -224,7 +220,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><string>3</string><fret>3</fret></technical><slur type="start"/></notations></note>
+      <notations><technical><hammer-on type="start" number="1">H</hammer-on></technical><slur type="start"/></notations></note>
       <note>
         <chord/>
         <pitch>
@@ -250,7 +246,7 @@
         </pitch>
         <duration>10080</duration>
         <type>quarter</type>
-      <notations><technical><pull-off type="start" number="1">P</pull-off><hammer-on type="stop" number="1"/><string>2</string><fret>3</fret></technical><slur type="start"/></notations></note>
+      <notations><technical><hammer-on type="stop" number="1"/></technical><slur type="stop"/></notations></note>
       <note>
         <pitch>
           <step>D</step>
@@ -258,7 +254,7 @@
         </pitch>
         <duration>10080</duration>
         <type>quarter</type>
-      <notations><technical><pull-off type="stop" number="1"/><string>2</string><fret>3</fret></technical><slur type="stop"/></notations></note>
+      </note>
       <note>
         <pitch>
           <step>D</step>
@@ -267,14 +263,10 @@
         <duration>5040</duration>
         <type>eighth</type>
         <notations>
-          <other-ornament/>
           <technical>
-            <bend>
-              <bend-alter>0.5</bend-alter>
-            </bend>
-          </technical>
+            </technical>
         </notations>
-      </note>
+      <?GP <root><vibrato type="Slight"/></root>?></note>
       <note>
         <rest/>
         <duration>5040</duration>
@@ -336,6 +328,14 @@
         <duration>20160</duration>
         <type>half</type>
         <accidental>flat</accidental>
+        <notations>
+          <other-ornament/>
+          <technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        </notations>
       </note>
       <note>
         <pitch>
@@ -368,6 +368,14 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>sharp</accidental>
+        <notations>
+          <other-ornament/>
+          <technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        </notations>
       </note>
     </measure>
     <!--========================= Measure 5 ==========================-->
@@ -410,10 +418,14 @@
         <type>half</type>
         <accidental>sharp</accidental>
         <notations>
+          <other-ornament/>
           <technical>
-            </technical>
-        </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
+            <pull-off type="start" number="1">P</pull-off><bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        <slur type="start"/></notations>
+      </note>
       <note>
         <pitch>
           <step>G</step>
@@ -424,7 +436,7 @@
         <type>eighth</type>
         <stem>down</stem>
         <beam number="1">begin</beam>
-      </note>
+      <notations><technical><pull-off type="stop" number="1"/></technical><slur type="stop"/></notations></note>
       <note>
         <pitch>
           <step>F</step>
@@ -472,7 +484,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>natural</accidental>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><string>1</string><fret>3</fret></technical><slur type="start"/></notations></note>
+      <notations><technical><pull-off type="start" number="1">P</pull-off></technical><slur type="start"/></notations></note>
       <note>
         <chord/>
         <pitch>
@@ -511,7 +523,7 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-      <notations><technical><pull-off type="start" number="1">P</pull-off><hammer-on type="stop" number="1"/><string>3</string><fret>2</fret></technical><slur type="start"/></notations></note>
+      <notations><technical><hammer-on type="start" number="1">H</hammer-on></technical><slur type="start"/></notations></note>
       <note>
         <pitch>
           <step>E</step>
@@ -521,8 +533,8 @@
         <duration>10080</duration>
         <type>quarter</type>
         <accidental>flat</accidental>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><pull-off type="stop" number="1"/><string>2</string><fret>4</fret></technical><slur type="start"/></notations></note>
-      <note>
+      <notations><technical><hammer-on type="stop" number="1"/></technical><slur type="stop"/></notations></note>
+      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
         <pitch>
           <step>E</step>
           <alter>-1</alter>
@@ -530,7 +542,12 @@
         </pitch>
         <duration>5040</duration>
         <type>eighth</type>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><hammer-on type="stop" number="1"/><string>2</string><fret>4</fret></technical><slur type="start"/></notations></note>
+        <notations>
+          <technical>
+            <harmonic/>
+          </technical>
+        </notations>
+      </note>
       <note>
         <pitch>
           <step>A</step>
@@ -540,7 +557,11 @@
         <type>eighth</type>
         <stem>down</stem>
         <beam number="1">begin</beam>
-      <notations><technical><hammer-on type="stop" number="1"/><string>3</string><fret>2</fret></technical><slur type="stop"/></notations></note>
+        <notations>
+          <technical>
+            </technical>
+        </notations>
+      <?GP <root><vibrato type="Slight"/></root>?></note>
       <note>
         <pitch>
           <step>A</step>
@@ -576,7 +597,7 @@
         <accidental>flat</accidental>
         <stem>down</stem>
         <beam number="1">begin</beam>
-      <notations><technical><pull-off type="start" number="1">P</pull-off><string>4</string><fret>1</fret></technical><slur type="start"/></notations></note>
+      </note>
       <note>
         <chord/>
         <pitch>
@@ -606,7 +627,15 @@
         <accidental>flat</accidental>
         <stem>down</stem>
         <beam number="1">end</beam>
-      <notations><technical><pull-off type="stop" number="1"/><string>4</string><fret>13</fret></technical><slur type="stop"/></notations></note>
+        <notations>
+          <other-ornament/>
+          <technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        </notations>
+      </note>
       <note>
         <rest/>
         <duration>5040</duration>
@@ -769,10 +798,14 @@
         <dot/>
         <accidental>flat</accidental>
         <notations>
+          <other-ornament/>
           <technical>
-            </technical>
-        </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
+            <hammer-on type="start" number="1">H</hammer-on><bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
+        <slur type="start"/></notations>
+      </note>
       <note>
         <pitch>
           <step>B</step>
@@ -782,11 +815,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-        <notations>
-          <technical>
-            </technical>
-        </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
+      <notations><technical><hammer-on type="stop" number="1"/></technical><slur type="stop"/></notations></note>
     </measure>
     <!--========================= Measure 9 ==========================-->
     <measure implicit="no" number="9">
@@ -799,7 +828,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-      <notations><technical><hammer-on type="start" number="1">H</hammer-on><string>5</string><fret>1</fret></technical><slur type="start"/></notations></note>
+      </note>
       <note>
         <chord/>
         <pitch>
@@ -826,7 +855,7 @@
         <type>half</type>
         <dot/>
         <accidental>flat</accidental>
-      <notations><technical><hammer-on type="stop" number="1"/><string>5</string><fret>1</fret></technical><slur type="stop"/></notations></note>
+      </note>
     </measure>
     <!--========================= Measure 10 =========================-->
     <measure implicit="no" number="10">
@@ -909,7 +938,7 @@
         <type>eighth</type>
         <accidental>sharp</accidental>
       </note>
-      <direction placement="above"><direction-type><words font-size="10" font-style="italic" halign="center" valign="top">Harm.</words></direction-type></direction><note>
+      <note>
         <pitch>
           <step>G</step>
           <alter>1</alter>
@@ -917,11 +946,6 @@
         </pitch>
         <duration>10080</duration>
         <type>quarter</type>
-        <notations>
-          <technical>
-            <harmonic/>
-          </technical>
-        </notations>
       </note>
       <note>
         <pitch>
@@ -1152,7 +1176,7 @@
         <duration>5040</duration>
         <type>eighth</type>
         <accidental>flat</accidental>
-      </note>
+      <notations><technical><pull-off type="start" number="1">P</pull-off></technical><slur type="start"/></notations></note>
       <note>
         <chord/>
         <pitch>
@@ -1183,7 +1207,7 @@
         </pitch>
         <duration>20160</duration>
         <type>half</type>
-      </note>
+      <notations><technical><pull-off type="stop" number="1"/></technical><slur type="stop"/></notations></note>
       <note>
         <pitch>
           <step>D</step>
@@ -1192,10 +1216,14 @@
         <duration>5040</duration>
         <type>eighth</type>
         <notations>
+          <other-ornament/>
           <technical>
-            </technical>
+            <bend>
+              <bend-alter>0.5</bend-alter>
+            </bend>
+          </technical>
         </notations>
-      <?GP <root><vibrato type="Slight"/></root>?></note>
+      </note>
     </measure>
   </part>
 </score-partwise>
