@@ -152,24 +152,92 @@ import numpy as np
 import scipy.signal
 import librosa
 
+# class Augmentor(object):
+#     def __init__(self, ir_path=None, sample_rate=16000):
+#         self.sample_rate = sample_rate
+#         # Using a fixed seed for reproducibility in debug, 
+#         # but the random_state ensures variety during training.
+#         self.random_state = np.random.RandomState(42)
+#         self.irs = []
+        
+#         if ir_path:
+#             # We use sorted to ensure file order is consistent across environments
+#             ir_files = sorted(glob.glob(os.path.join(ir_path, '*.wav')))
+#             print(f"Augmentor: Loading {len(ir_files)} IR files...")
+            
+#             for ir_file in ir_files:
+#                 try:
+#                     # EXACT MATCH: librosa load at TARGET_SR, mono=True
+#                     ir, _ = librosa.load(ir_file, sr=self.sample_rate, mono=True)
+#                     # Normalize IR as in your logic
+#                     ir = ir / (np.max(np.abs(ir)) + 1e-9)
+#                     self.irs.append(ir)
+#                 except Exception as e:
+#                     print(f"Skipping IR {ir_file}: {e}")
+#             print(f"Augmentor: Successfully loaded {len(self.irs)} IRs.")
+
+#     def apply_clipping_distortion(self, signal, gain):
+#         # EXACT MATCH: np.tanh(signal * gain)
+#         return np.tanh(signal * gain)
+
+#     def augment(self, x):
+#         """
+#         Direct port of your distortion script.
+#         Guarantees 0ms alignment error.
+#         """
+#         # 1. Apply Distortion
+#         gain = self.random_state.uniform(5.0, 15.0)
+#         clipped_signal = self.apply_clipping_distortion(x, gain)
+
+#         # 2. Convolution with Peak Alignment
+#         if self.irs:
+#             # random.choice(ir_files) equivalent
+#             idx = self.random_state.randint(0, len(self.irs))
+#             ir = self.irs[idx]
+            
+#             # EXACT MATCH: peak_idx = np.argmax(np.abs(ir))
+#             peak_idx = np.argmax(np.abs(ir))
+            
+#             # EXACT MATCH: fftconvolve(..., mode='full')
+#             full_conv = scipy.signal.fftconvolve(clipped_signal, ir, mode='full')
+            
+#             # EXACT MATCH: slice starting at PEAK_IDX for length of SIGNAL
+#             x_aug = full_conv[peak_idx : peak_idx + len(x)]
+#         else:
+#             x_aug = clipped_signal
+
+#         # 3. Peak Normalization
+#         # EXACT MATCH: (distorted_signal / max_val) * 0.9
+#         max_val = np.max(np.abs(x_aug))
+#         if max_val > 0:
+#             x_aug = (x_aug / max_val) * 0.9
+                
+#         return x_aug
+    
+
+import numpy as np
+import scipy.signal
+import librosa
+import glob
+import os
+
 class Augmentor(object):
     def __init__(self, ir_path=None, sample_rate=16000):
         self.sample_rate = sample_rate
-        # Using a fixed seed for reproducibility in debug, 
-        # but the random_state ensures variety during training.
-        self.random_state = np.random.RandomState(42)
+        # REMOVE FIXED SEED: Let numpy handle entropy, or seed via worker_init_fn
+        # If you really need debug reproducibility, pass the seed as an argument, 
+        # but default to None.
+        self.random_state = np.random.RandomState(None) 
+        
         self.irs = []
         
         if ir_path:
-            # We use sorted to ensure file order is consistent across environments
             ir_files = sorted(glob.glob(os.path.join(ir_path, '*.wav')))
             print(f"Augmentor: Loading {len(ir_files)} IR files...")
             
             for ir_file in ir_files:
                 try:
-                    # EXACT MATCH: librosa load at TARGET_SR, mono=True
                     ir, _ = librosa.load(ir_file, sr=self.sample_rate, mono=True)
-                    # Normalize IR as in your logic
                     ir = ir / (np.max(np.abs(ir)) + 1e-9)
                     self.irs.append(ir)
                 except Exception as e:
@@ -177,39 +245,37 @@ class Augmentor(object):
             print(f"Augmentor: Successfully loaded {len(self.irs)} IRs.")
 
     def apply_clipping_distortion(self, signal, gain):
-        # EXACT MATCH: np.tanh(signal * gain)
         return np.tanh(signal * gain)
 
     def augment(self, x):
-        """
-        Direct port of your distortion script.
-        Guarantees 0ms alignment error.
-        """
         # 1. Apply Distortion
-        gain = self.random_state.uniform(10.0, 18.0)
+        # UPDATED RANGE: 2.0 (Crunch) to 15.0 (High Gain)
+        # This helps the student learn the transition from clean to distorted
+        gain = self.random_state.uniform(2.0, 15.0)
         clipped_signal = self.apply_clipping_distortion(x, gain)
 
         # 2. Convolution with Peak Alignment
         if self.irs:
-            # random.choice(ir_files) equivalent
             idx = self.random_state.randint(0, len(self.irs))
             ir = self.irs[idx]
             
-            # EXACT MATCH: peak_idx = np.argmax(np.abs(ir))
+            # This logic is PERFECT. Keep it exactly like this.
+            # It ensures the "attack" of the IR lines up with the "attack" of the input.
             peak_idx = np.argmax(np.abs(ir))
-            
-            # EXACT MATCH: fftconvolve(..., mode='full')
             full_conv = scipy.signal.fftconvolve(clipped_signal, ir, mode='full')
             
-            # EXACT MATCH: slice starting at PEAK_IDX for length of SIGNAL
-            x_aug = full_conv[peak_idx : peak_idx + len(x)]
+            # Safety check: ensure we don't go out of bounds (rare edge case)
+            if len(full_conv) >= peak_idx + len(x):
+                x_aug = full_conv[peak_idx : peak_idx + len(x)]
+            else:
+                # Fallback if convolution output is unexpectedly short
+                x_aug = full_conv[:len(x)] 
         else:
             x_aug = clipped_signal
 
         # 3. Peak Normalization
-        # EXACT MATCH: (distorted_signal / max_val) * 0.9
         max_val = np.max(np.abs(x_aug))
-        if max_val > 0:
+        if max_val > 1e-9: # slightly safer epsilon
             x_aug = (x_aug / max_val) * 0.9
                 
         return x_aug

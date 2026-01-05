@@ -32,34 +32,73 @@ def regress_onset_offset_frame_velocity_bce(model, output_dict, target_dict):
     return total_loss
 
 
+# def consistency_loss(student_dict, teacher_dict, target_dict,
+#                      tau=0.3, w_frame=1.0, w_onset=0.2, eps=1e-8):
+#     """
+#     Enforce: student(aug) ≈ teacher(clean)
+#     Only where mask_roll is valid, and only enforce onset where teacher is confident.
+#     """
+#     mask = target_dict['mask_roll']  # (B,T,88) presumably
+
+#     # teacher probs
+#     t_frame = teacher_dict['frame_output'].detach()
+#     t_onset = teacher_dict['reg_onset_output'].detach()
+
+#     # student probs
+#     s_frame = student_dict['frame_output']
+#     s_onset = student_dict['reg_onset_output']
+
+#     # frame consistency everywhere valid
+#     loss_frame = masked_mse(s_frame, t_frame, mask, eps)
+
+#     # onset consistency only where teacher believes note exists
+#     note_gate = (t_frame > tau).float()
+#     onset_mask = mask * note_gate
+#     loss_onset = masked_mse(s_onset, t_onset, onset_mask, eps)
+
+#     return w_frame * loss_frame + w_onset * loss_onset
+
 def consistency_loss(student_dict, teacher_dict, target_dict,
-                     tau=0.3, w_frame=1.0, w_onset=0.2, eps=1e-8):
+                     tau=0.0, w_frame=1.0, w_onset=1.0, eps=1e-8):
     """
-    Enforce: student(aug) ≈ teacher(clean)
-    Only where mask_roll is valid, and only enforce onset where teacher is confident.
+    IMPROVED: Uses Importance Weighting instead of Hard Gating.
+    Focuses the Student on matching the Teacher's PEAKS.
     """
-    mask = target_dict['mask_roll']  # (B,T,88) presumably
+    mask = target_dict['mask_roll']
 
-    # teacher probs
+    # --- 1. Frame Consistency (Sustain) ---
+    # We want consistency everywhere, but we can trust the teacher more 
+    # when it is confident (either definitely ON or definitely OFF).
     t_frame = teacher_dict['frame_output'].detach()
-    t_onset = teacher_dict['reg_onset_output'].detach()
-
-    # student probs
     s_frame = student_dict['frame_output']
-    s_onset = student_dict['reg_onset_output']
-
-    # frame consistency everywhere valid
+    
     loss_frame = masked_mse(s_frame, t_frame, mask, eps)
 
-    # onset consistency only where teacher believes note exists
-    note_gate = (t_frame > tau).float()
-    onset_mask = mask * note_gate
-    loss_onset = masked_mse(s_onset, t_onset, onset_mask, eps)
+    # --- 2. Onset Consistency (The Fix) ---
+    t_onset = teacher_dict['reg_onset_output'].detach()
+    s_onset = student_dict['reg_onset_output']
+    
+    # PROBLEM WITH OLD CODE: 
+    # note_gate = (t_frame > 0.3) <--- This filtered out the start of notes!
+    
+    # NEW STRATEGY: "Focus on the Attacks"
+    # We create a weight map. We want the student to pay 
+    # EXTRA attention where the Teacher detects an onset.
+    
+    # If Teacher says onset=0.9, weight is 1 + (5 * 0.9) = 5.5
+    # If Teacher says onset=0.0, weight is 1.0
+    onset_importance = 1.0 + (5.0 * t_onset)
+    
+    # Calculate Squared Error
+    squared_diff = (s_onset - t_onset) ** 2
+    
+    # Apply Mask AND Importance Weights
+    # This forces the student to prioritize the 'clicks' even if distortion hides them
+    weighted_diff = squared_diff * onset_importance * mask
+    
+    loss_onset = torch.sum(weighted_diff) / (torch.sum(mask) + eps)
 
     return w_frame * loss_frame + w_onset * loss_onset
-
-
-
 
 
 def regress_onset_offset_frame_bce(model, output_dict, target_dict):

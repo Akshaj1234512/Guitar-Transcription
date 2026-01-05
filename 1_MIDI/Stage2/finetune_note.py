@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
 Unified Finetuning Script (NOTE-ONLY) - MEAN TEACHER
-(GRADIENT ACCUMULATION + FROZEN BN + PREDICTABLE LOGGING)
+(GRADIENT ACCUMULATION + FROZEN BN + SUPERVISED BURN-IN)
 
-Mean Teacher intent implemented here:
-- Teacher runs on CLEAN audio (no grad)
-- Student runs on AUG/DISTORTED audio
-- Supervised loss is computed on the STUDENT(AUG) vs ground-truth labels
-- Consistency loss forces STUDENT(AUG) ≈ TEACHER(CLEAN), masked via target_dict
+Strategy:
+1. Burn-in Phase (0 -> 20k): Supervised Only. Teacher follows Student quickly.
+2. Ramp-up Phase (20k -> 27.5k): Consistency turns on slowly (Non-linear).
+3. Stable Phase (27.5k+): Full Mean Teacher consistency.
 """
 
 import os
@@ -33,17 +32,31 @@ from losses import get_loss_func, consistency_loss
 from evaluate import SegmentEvaluator
 import config
 
-# --- Mean Teacher Constants ---
-CONSISTENCY_WEIGHT = 100.0
-TEACHER_ALPHA = 0.999
+CONSISTENCY_WEIGHT = 80.0
+
+# Phase 1: Burn-in (Supervised Only, No Consistency)
+CONSISTENCY_START_ITER = 0 
+
+# Phase 2: Ramp-up Duration (Consistency grows 0 -> 100)
+CONSISTENCY_RAMP_LEN = 1600
+
+# Alpha Schedule: 0.99 (Fast) during burn-in/ramp, 0.999 (Stable) afterwards
+# Fast alpha during burn-in ensures the teacher isn't "cold" when consistency starts.
+ALPHA_FAST = 0.99
+ALPHA_STABLE = 0.999
 
 # --- Gradient Accumulation Config ---
 ACCUMULATION_STEPS = 16
 
 
 def update_ema_variables(model, ema_model, iteration):
+    # Keep Teacher updating quickly (0.99) until the ramp-up is fully finished
+    # This prevents the Teacher from "lagging" while the Student learns the new domain
+    ramp_end = CONSISTENCY_START_ITER + CONSISTENCY_RAMP_LEN
+    
+    alpha = ALPHA_FAST if iteration < ramp_end else ALPHA_STABLE
+
     # EMA for parameters
-    alpha = TEACHER_ALPHA
     for ema_param, param in zip(ema_model.parameters(), model.parameters()):
         ema_param.data.mul_(alpha).add_(param.data, alpha=1 - alpha)
 
@@ -52,6 +65,27 @@ def update_ema_variables(model, ema_model, iteration):
         ema_buffer.data.copy_(buffer.data)
 
     return alpha
+
+
+def get_current_consistency_weight(iteration):
+    """
+    Returns 0.0 during Burn-in.
+    Ramps up gaussianly during Ramp-up.
+    Returns max weight during Stable phase.
+    """
+    # Phase 1: Supervised Burn-in
+    if iteration < CONSISTENCY_START_ITER:
+        return 0.0
+    
+    # Calculate progress through the ramp phase (0.0 to 1.0)
+    progress = (iteration - CONSISTENCY_START_ITER) / CONSISTENCY_RAMP_LEN
+    
+    # Phase 3: Stable Mean Teacher
+    if progress >= 1.0:
+        return CONSISTENCY_WEIGHT
+    
+    # Phase 2: Gaussian Ramp-up (Standard Mean Teacher Sigmoid-like curve)
+    return CONSISTENCY_WEIGHT * np.exp(-5.0 * (1.0 - progress) ** 2)
 
 
 def _load_pt_note_only(model, pretrained_path, logger=logging):
@@ -123,7 +157,9 @@ def finetune(args):
     logging.info(f"Accumulation Steps: {ACCUMULATION_STEPS}")
     logging.info(f"Effective Batch Size: {batch_size * ACCUMULATION_STEPS}")
     logging.info(f"Consistency Weight: {CONSISTENCY_WEIGHT}")
-    logging.info(f"Teacher Alpha: {TEACHER_ALPHA}")
+    logging.info(f"Burn-in Length: {CONSISTENCY_START_ITER} iters")
+    logging.info(f"Ramp-up Length: {CONSISTENCY_RAMP_LEN} iters")
+    logging.info(f"Alpha Strategy: {ALPHA_FAST} -> {ALPHA_STABLE}")
 
     # --- Initialize Student ---
     model = Regress_onset_offset_frame_velocity_CRNN(frames_per_second=frames_per_second, classes_num=classes_num)
@@ -244,12 +280,16 @@ def finetune(args):
         out_s_clean = model(x_clean)
 
         loss_sup = loss_func(model, out_s_clean, batch_data_dict)
-        # loss_sup = loss_func(model, out_s_aug, batch_data_dict)
 
-        # Consistency: student(AUG) ~= teacher(CLEAN), masked via target_dict
         loss_cons = consistency_loss(out_s_aug, out_t_clean, batch_data_dict)
 
-        weighted_cons = CONSISTENCY_WEIGHT * loss_cons
+        # --- Ramp Up Logic ---
+        current_consistency_weight = get_current_consistency_weight(iteration)
+        
+        # Weighted Consistency Loss
+        weighted_cons = current_consistency_weight * loss_cons
+        
+        # Total Loss
         loss_batch = loss_sup + weighted_cons
 
         # Scale for gradient accumulation
@@ -281,6 +321,7 @@ def finetune(args):
             logging.info(
                 f'Iter: {iteration}, Alpha: {current_alpha:.4f}, '
                 f'Total: {real_total:.3f} (Sup: {real_sup:.3f} + Cons: {real_cons:.3f}), '
+                f'ConsWt: {current_consistency_weight:.2f}, '
                 f'lr: {optimizer.param_groups[0]["lr"]:.2e}'
             )
 
@@ -325,13 +366,13 @@ if __name__ == '__main__':
     parser.add_argument('--model_type', type=str, default='Regress_onset_offset_frame_velocity_CRNN')
     parser.add_argument('--loss_type', type=str, default='regress_onset_offset_frame_velocity_bce')
     parser.add_argument('--augmentation', type=str, default='aug')
-    parser.add_argument('--max_note_shift', type=int, default=5)
+    parser.add_argument('--max_note_shift', type=int, default=0)
     parser.add_argument('--max_timing_shift', type=float, default=0.0)
     parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--learning_rate', type=float, default=1e-5)
     parser.add_argument('--reduce_iteration', type=int, default=10000)
     parser.add_argument('--resume_iteration', type=int, default=0)
-    parser.add_argument('--early_stop', type=int, default=100000)
+    parser.add_argument('--early_stop', type=int, default=200000)
     parser.add_argument('--mini_data', action='store_true', default=False)
     parser.add_argument('--cuda', action='store_true', default=False)
     parser.add_argument('--pretrained_path', type=str, default='none')
