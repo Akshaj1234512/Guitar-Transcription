@@ -1,0 +1,239 @@
+import numpy as np
+import argparse
+import os
+import time
+import logging
+import h5py
+import librosa
+from utilities import (create_folder, float32_to_int16, create_logging, 
+    get_filename, normalize_audio)
+import config
+
+
+def read_guitarset_midi(midi_path):
+    """Parse MIDI file of GuitarSet dataset using pretty_midi for correct timing.
+    Combines all instruments/channels into a single channel for training.
+    
+    Args:
+        midi_path: str, path to MIDI file
+        
+    Returns:
+        dict: Dictionary containing MIDI events and timestamps in SECONDS
+    """
+    import pretty_midi
+    
+    midi_file = pretty_midi.PrettyMIDI(midi_path)
+    
+    midi_dict = {
+        'midi_event': [],
+        'midi_event_time': []
+    }
+    
+    # Process ALL instruments and combine them into one channel
+    for instrument in midi_file.instruments:
+        for note in instrument.notes:
+            # Note on event - combine all instruments into channel 0
+            event_str = f"note_on channel=0 note={note.pitch} velocity={note.velocity} time={note.start}"
+            midi_dict['midi_event'].append(event_str)
+            midi_dict['midi_event_time'].append(note.start)
+            
+            # Note off event - combine all instruments into channel 0
+            event_str = f"note_off channel=0 note={note.pitch} velocity=0 time={note.end}"
+            midi_dict['midi_event'].append(event_str)
+            midi_dict['midi_event_time'].append(note.end)
+    
+    # Sort events by time to ensure chronological order
+    sorted_indices = np.argsort(midi_dict['midi_event_time'])
+    midi_dict['midi_event'] = [midi_dict['midi_event'][i] for i in sorted_indices]
+    midi_dict['midi_event_time'] = [midi_dict['midi_event_time'][i] for i in sorted_indices]
+    
+    return midi_dict
+
+
+def pack_guitarset_dataset_to_hdf5(args):
+    """Load & resample GuitarSet audio files, then write to hdf5 files.
+    
+    This version creates a combined dataset using all available audio types
+    with the same MIDI labels, effectively multiplying the training data by 4x.
+
+    Args:
+      dataset_dir: str, directory of GuitarSet dataset
+      workspace: str, directory of your workspace
+      audio_type: str, 'combined' to use all audio types, or specific type for single
+    """
+    
+    # Arguments & parameters
+    dataset_dir = args.dataset_dir
+    workspace = args.workspace
+    audio_type = args.audio_type
+    
+    sample_rate = config.sample_rate
+    
+    # Paths
+    midi_dir = os.path.join(dataset_dir, 'MIDIAnnotations')
+    
+
+    audio_types = [audio_type]
+    waveform_hdf5s_dir = os.path.join(workspace, 'hdf5s', 'guitarset_hex_debleed', '2024')
+    
+    logs_dir = os.path.join(workspace, 'logs', get_filename(__file__))
+    create_logging(logs_dir, filemode='w')
+    logging.info(args)
+    
+    # Find all MIDI files
+    midi_files = []
+    for root, dirs, files in os.walk(midi_dir):
+        for file in files:
+            if file.endswith('.mid'):
+                midi_files.append(file)
+    
+    midi_files.sort()
+    audios_num = len(midi_files)
+    logging.info('Total MIDI files: {}'.format(audios_num))
+    
+    # Create train/validation split (80/20)
+    np.random.seed(1234)
+    indices = np.random.permutation(audios_num)
+    train_indices = indices[:int(0.8 * audios_num)]
+    validation_indices = indices[int(0.8 * audios_num):]
+    
+    feature_time = time.time()
+    
+        # Load & resample each audio file to a hdf5 file
+    for n in range(audios_num):
+        midi_filename = midi_files[n]
+        base_name = os.path.splitext(midi_filename)[0]
+
+        # Process each audio type for this MIDI file
+        for current_audio_type in audio_types:
+            audio_dir = os.path.join(dataset_dir, current_audio_type)
+            
+            # Find corresponding audio file
+            audio_filename = None
+            
+            # GuitarSet has different naming patterns
+            # Try different patterns based on audio type
+            if current_audio_type == 'audio_mix':
+                patterns = [
+                    base_name + '_mix.wav',
+                    base_name + '_comp_mix.wav',
+                    base_name + '_solo_mix.wav'
+                ]
+            elif current_audio_type == 'audio_hex_original':
+                patterns = [
+                    base_name + '_hex.wav',
+                    base_name + '_comp_hex.wav',
+                    base_name + '_solo_hex.wav'
+                ]
+            elif current_audio_type == 'audio_hex_debleeded':
+                patterns = [
+                    base_name + '_hex_cln.wav',
+                    base_name + '_comp_hex_cln.wav',
+                    base_name + '_solo_hex_cln.wav'
+                ]
+            elif current_audio_type == 'audio_mono-mic':
+                patterns = [
+                    base_name + '_mic.wav',
+                    base_name + '_comp_mic.wav',
+                    base_name + '_solo_mic.wav'
+                ]
+            elif current_audio_type == 'distorted':
+                patterns = [
+                    # This matches your file: 00_BN1-129-Eb_comp_hex_cln.wav
+                    base_name + '_hex_cln.wav',       
+                    
+                    # These are backups in case some files have slightly different names
+                    base_name + '_comp_hex_cln.wav',
+                    base_name + '_solo_hex_cln.wav'
+                ]
+            elif current_audio_type == 'acoustic_noisy':
+                patterns = [
+                    # This matches your file: 00_BN1-129-Eb_comp_hex_cln.wav
+                    base_name + '_hex_cln.wav',       
+                    
+                    # These are backups in case some files have slightly different names
+                    base_name + '_comp_hex_cln.wav',
+                    base_name + '_solo_hex_cln.wav'
+                ]
+            else:
+                patterns = [base_name + '.wav']
+            
+            for pattern in patterns:
+                if os.path.exists(os.path.join(audio_dir, pattern)):
+                    audio_filename = pattern
+                    break
+            
+            if audio_filename is None:
+                logging.warning('No audio file found for {} in {}'.format(midi_filename, current_audio_type))
+                continue
+
+            logging.info('{} {} ({})'.format(n, midi_filename, current_audio_type))
+
+            try:
+                # Read MIDI (same for all audio types)
+                midi_path = os.path.join(midi_dir, midi_filename)
+                midi_dict = read_guitarset_midi(midi_path)
+
+                # Load audio
+                audio_path = os.path.join(audio_dir, audio_filename)
+                (audio, _) = librosa.core.load(audio_path, sr=sample_rate, mono=True)
+
+                # Normalize audio
+                audio = normalize_audio(audio)
+
+                # Calculate duration
+                duration = len(audio) / sample_rate
+
+                # Determine split and year
+                if n in train_indices:
+                    split = 'train'
+                else:
+                    split = 'validation'
+
+                # Create HDF5 filename with audio type
+                hdf5_filename = base_name + '__' + current_audio_type + '.h5'
+                
+                # Create split-specific directory and place file there
+                split_dir = os.path.join(waveform_hdf5s_dir, split)
+                packed_hdf5_path = os.path.join(split_dir, hdf5_filename)
+
+                create_folder(os.path.dirname(packed_hdf5_path))
+
+                with h5py.File(packed_hdf5_path, 'w') as hf:
+                    # Create attributes
+                    hf.attrs.create('dataset', data='guitarset'.encode(), dtype='S20')
+                    hf.attrs.create('split', data=split.encode(), dtype='S20')
+                    hf.attrs.create('year', data='2024'.encode(), dtype='S10')
+                    hf.attrs.create('audio_type', data=current_audio_type.encode(), dtype='S30')
+                    hf.attrs.create('midi_filename', data=midi_filename.encode(), dtype='S100')
+                    hf.attrs.create('audio_filename', data=audio_filename.encode(), dtype='S100')
+                    hf.attrs.create('duration', data=duration, dtype=np.float32)
+
+                    # Create datasets
+                    hf.create_dataset(name='midi_event',
+                        data=[e.encode() for e in midi_dict['midi_event']], dtype='S100')
+                    hf.create_dataset(name='midi_event_time',
+                        data=midi_dict['midi_event_time'], dtype=np.float32)
+                    hf.create_dataset(name='waveform',
+                        data=float32_to_int16(audio), dtype=np.int16)
+
+            except Exception as e:
+                logging.warning('Failed to process {} in {}: {}, skipping...'.format(midi_filename, current_audio_type, str(e)))
+                continue
+    
+    logging.info('Write hdf5 to {}'.format(waveform_hdf5s_dir))
+    logging.info('Time: {:.3f} s'.format(time.time() - feature_time))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Pack GuitarSet dataset to HDF5 format')
+    parser.add_argument('--dataset_dir', type=str, required=True, 
+        help='Directory of GuitarSet dataset')
+    parser.add_argument('--workspace', type=str, required=True, 
+        help='Directory of your workspace')
+    parser.add_argument('--audio_type', type=str, default='combined',
+        choices=['acoustic_noisy', 'distorted', 'audio_hex_debleeded', 'audio_hex_original', 'audio_mix', 'audio_mono-mic'],
+        help='Type of audio to process. "combined" uses all audio types (4x more data!)')
+    
+    args = parser.parse_args()
+    pack_guitarset_dataset_to_hdf5(args)

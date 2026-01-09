@@ -97,7 +97,7 @@ class ConvBlock(nn.Module):
         
         if pool_type == 'avg':
             x = F.avg_pool2d(x, kernel_size=pool_size)
-        
+
         return x
 
 

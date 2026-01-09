@@ -23,19 +23,6 @@ from inference import PianoTranscription
 def infer_prob(args):
     """Inference the output probabilites on any dataset, and write out to
     disk. This will reduce duplicate computation for later evaluation.
-
-    Args:
-      workspace: str, directory of your workspace
-      model_type: str
-      augmentation: str, e.g. 'none'
-      checkpoint_path: str
-      dataset_name: str, name of the dataset (e.g., guitarset, maestro)
-      hdf5s_dir: str, path to HDF5 files directory
-      split: str, dataset split (e.g., 'val', 'test')
-      post_processor_type: 'regression' | 'onsets_frames'. High-resolution 
-        system should use 'regression'. 'onsets_frames' is only used to compare
-        with Google's onsets and frames system.
-      cuda: bool
     """
 
     # Arguments & parameters
@@ -57,14 +44,12 @@ def infer_prob(args):
     begin_note = config.begin_note
 
     # Paths
-    # Extract model name from checkpoint path for folder naming
-    model_name = os.path.splitext(os.path.basename(checkpoint_path))[0]  # e.g., "PT" from "PT.pth"
+    model_name = os.path.splitext(os.path.basename(checkpoint_path))[0]
     
-    # Create predicted MIDI directory in probs folder with dataset name
-    predicted_midi_dir = os.path.join(workspace, 'probs', f'MIDI_{model_name}_{dataset_name}')
-    create_folder(predicted_midi_dir)
+    # --- MIDI generation commented out ---
+    # predicted_midi_dir = os.path.join(workspace, 'probs', f'MIDI_{model_name}_{dataset_name}')
+    # create_folder(predicted_midi_dir)
     
-    # Also create probs directory for pickle files with model name and dataset name
     probs_dir = os.path.join(workspace, 'probs', f'PKL_{model_name}_{dataset_name}')
     create_folder(probs_dir)
 
@@ -75,10 +60,8 @@ def infer_prob(args):
 
     (hdf5_names, hdf5_paths) = traverse_folder(hdf5s_dir)
 
-    n = 0
     for n, hdf5_path in enumerate(hdf5_paths):
         print(n, hdf5_path)
-        n += 1
 
         # Load audio                
         with h5py.File(hdf5_path, 'r') as hf:
@@ -92,7 +75,6 @@ def infer_prob(args):
             frames_per_second=frames_per_second, begin_note=begin_note, 
             classes_num=classes_num)
 
-        # Get ground truths
         (target_dict, note_events, pedal_events) = \
             target_processor.process(start_time=0, 
                 midi_events_time=midi_events_time, 
@@ -102,14 +84,26 @@ def infer_prob(args):
         ref_midi_notes = np.array([event['midi_note'] for event in note_events])
         ref_velocity = np.array([event['velocity'] for event in note_events])
 
-        # Transcribe and save MIDI file
-        midi_filename = f"{get_filename(hdf5_path)}.mid"
-        midi_path = os.path.join(predicted_midi_dir, midi_filename)
+        # --- Bypassing the crashing transcriptor.transcribe() ---
+        # Instead of calling transcribe, we do a raw forward pass to get the output_dict
         
-        transcribed_dict = transcriptor.transcribe(audio, midi_path)
-        output_dict = transcribed_dict['output_dict']
+        audio_input = audio[None, :]  # (1, audio_samples)
+        
+        # Pad audio
+        audio_len = audio_input.shape[1]
+        pad_len = int(np.ceil(audio_len / segment_samples)) * segment_samples - audio_len
+        audio_padded = np.concatenate((audio_input, np.zeros((1, pad_len))), axis=1)
 
-        # Pack probabilites to dump
+        # Forward Pass
+        segments = transcriptor.enframe(audio_padded, segment_samples)
+        from pytorch_utils import forward
+        output_dict = forward(transcriptor.model, segments, batch_size=32)
+
+        # Deframe
+        for key in output_dict.keys():
+            output_dict[key] = transcriptor.deframe(output_dict[key])[0 : audio_len]
+
+        # Pack probabilities to dump (The .pkl generation)
         total_dict = {key: output_dict[key] for key in output_dict.keys()}
         total_dict['frame_roll'] = target_dict['frame_roll']
         total_dict['ref_on_off_pairs'] = ref_on_off_pairs
@@ -141,12 +135,12 @@ class ScoreCalculator(object):
 
         self.evaluate_frame = True
         self.onset_tolerance = 0.05
-        self.offset_ratio = 0.2  # None | 0.2
-        self.offset_min_tolerance = 0.05
+        self.offset_ratio = None  # None | 0.2
+        self.offset_min_tolerance = None
 
         self.pedal_offset_threshold = 0.2
-        self.pedal_offset_ratio = 0.2  # None | 0.2
-        self.pedal_offset_min_tolerance = 0.05
+        self.pedal_offset_ratio = None  # None | 0.2
+        self.pedal_offset_min_tolerance = None
 
         self.post_processor_type = post_processor_type
         
@@ -231,7 +225,7 @@ class ScoreCalculator(object):
                 classes_num=self.classes_num, onset_threshold=onset_threshold, 
                 offset_threshold=offset_threshold, 
                 frame_threshold=frame_threshold, 
-                pedal_offset_threshold=self.pedal_offset_threshold)
+                pedal_offset_threshold=False)
 
         elif self.post_processor_type == 'onsets_frames':
             post_processor = OnsetsFramesPostProcessor(self.frames_per_second, 
@@ -322,7 +316,6 @@ class ScoreCalculator(object):
 
                 print('pedal f1: {:.3f}, frame f1: {:.3f}'.format(pedal_f1, return_dict['pedal_frame_f1']))
 
-        print('note f1: {:.3f}'.format(note_f1))
         
         # Note: Individual song metrics are not saved to file here
         # The final averaged metrics are saved in the calculate_metrics function

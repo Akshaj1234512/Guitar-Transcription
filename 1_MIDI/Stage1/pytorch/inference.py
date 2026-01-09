@@ -41,9 +41,9 @@ class PianoTranscription(object):
         self.post_processor_type = post_processor_type
         self.frames_per_second = config.frames_per_second
         self.classes_num = config.classes_num
-        self.onset_threshold = 0.3
+        self.onset_threshold = 0.17
         self.offset_threshod = 0.3
-        self.frame_threshold = 0.1
+        self.frame_threshold = 0.29
         self.pedal_offset_threshold = 0.2
 
         # Build model

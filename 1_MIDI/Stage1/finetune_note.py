@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-Unified Finetuning Script (NOTE-ONLY)
-
-- Trains ONLY Regress_onset_offset_frame_velocity_CRNN (no pedal).
-- Can load PT.pth even if it was trained as Note_pedal, by stripping "note_model." keys.
-"""
 
 import os
 import sys
@@ -29,28 +23,16 @@ import config
 
 
 def _load_pt_note_only(model, pretrained_path, logger=logging):
-    """
-    Robust loader for NOTE-ONLY model from PT checkpoints.
 
-    Supports:
-      A) {'model': state_dict}
-      B) state_dict directly
-      C) Note_pedal flat keys: {'note_model.xxx': ... , 'pedal_model.xxx': ...}
-      D) Note_pedal split dict: {'note_model': {...}, 'pedal_model': {...}}
-      E) Wrapped split dict: {'model': {'note_model': {...}, 'pedal_model': {...}}}
-    """
     logger.info(f'Loading pretrained model from {pretrained_path}')
     ckpt = torch.load(pretrained_path, map_location='cpu')
 
-    # Step 1: unwrap common outer container
     state = ckpt['model'] if isinstance(ckpt, dict) and 'model' in ckpt else ckpt
 
-    # Step 2: if it is a split dict, take note_model directly
     if isinstance(state, dict) and 'note_model' in state and isinstance(state['note_model'], dict):
         logger.info("Detected split checkpoint with 'note_model' and 'pedal_model'. Using state['note_model'].")
         state = state['note_model']
 
-    # Step 3: if it is a flat dict with note_model. prefix, strip it
     if isinstance(state, dict) and any(k.startswith('note_model.') for k in state.keys()):
         logger.info("Detected flat Note_pedal checkpoint with 'note_model.' prefix. Stripping prefix.")
         state = {k.replace('note_model.', '', 1): v for k, v in state.items() if k.startswith('note_model.')}
@@ -66,8 +48,6 @@ def _load_pt_note_only(model, pretrained_path, logger=logging):
     if len(unexpected) > 0:
         logger.info("Example unexpected keys: " + ", ".join(unexpected[:20]))
 
-    # Hard fail if it looks like nothing loaded
-    # (tune threshold if needed; note-only model has lots of keys)
     if len(unexpected) > 0 and len(missing) > 0 and len(unexpected) > 1000:
         logger.warning("WARNING: Huge number of unexpected keys. Likely wrong checkpoint format or wrong extraction.")
 
@@ -79,7 +59,6 @@ def finetune(args):
     dataset_name = args.dataset_name
     hdf5s_dir = args.hdf5s_dir
 
-    # NOTE-ONLY defaults
     model_type = args.model_type
     loss_type = args.loss_type
 
@@ -101,10 +80,8 @@ def finetune(args):
     classes_num = config.classes_num
     num_workers = 8
 
-    # Loss function (must be NOTE-ONLY)
     loss_func = get_loss_func(loss_type)
 
-    # --- Paths ---
     checkpoints_dir = os.path.join(workspace, 'checkpoints')
     create_folder(checkpoints_dir)
 
@@ -147,7 +124,6 @@ def finetune(args):
     logging.info(f'HDF5 directory: {hdf5s_dir}')
     logging.info(args)
 
-    # --- Model: NOTE ONLY ---
     if model_type != 'Regress_onset_offset_frame_velocity_CRNN':
         logging.warning(f'Overriding model_type={model_type} -> Regress_onset_offset_frame_velocity_CRNN (note-only).')
     model = Regress_onset_offset_frame_velocity_CRNN(frames_per_second=frames_per_second, classes_num=classes_num)
@@ -238,7 +214,6 @@ def finetune(args):
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
-    # --- Load pretrained PT note weights only ---
     if args.pretrained_path and args.pretrained_path.lower() != 'none':
         _load_pt_note_only(model, args.pretrained_path, logger=logging)
     else:
@@ -247,9 +222,7 @@ def finetune(args):
     model.to(device)
 
     torch.autograd.set_detect_anomaly(True)
-    # --------------------------------------------------
-    # Sanity validation BEFORE training starts
-    # --------------------------------------------------
+
     logging.info("===== PRE-TRAIN VALIDATION (sanity check) =====")
     model.eval()
     with torch.no_grad():
@@ -262,7 +235,6 @@ def finetune(args):
     train_bgn_time = time.time()
     iteration = resume_iteration
 
-    # Best-by validation reg_onset_mae (lower is better)
     best_validation_metric = float('inf')
     best_validation_iteration = 0
 

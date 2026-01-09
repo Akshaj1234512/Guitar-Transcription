@@ -14,6 +14,12 @@ from utilities import (create_folder, int16_to_float32, traverse_folder,
     plot_waveform_midi_targets)
 import config
 
+import os
+import glob
+import numpy as np
+import librosa
+import scipy.signal
+from scipy.signal import butter, filtfilt
 
 class MaestroDataset(object):
     def __init__(self, hdf5s_dir, segment_seconds, frames_per_second, 
@@ -137,77 +143,175 @@ class MaestroDataset(object):
 
 
 class Augmentor(object):
-    def __init__(self):
-        """Data augmentor."""
-        
-        self.sample_rate = config.sample_rate
-        self.random_state = np.random.RandomState(1234)
+    """
+    Augmentor that matches noisy GuitarSet generator:
 
-    def augment(self, x):
-        clip_samples = len(x)
+    1) High-pass filter (>80Hz) with filtfilt (zero-phase, no timing shift)
+    2) IR convolution
+    3) Additive noise: white / pink / hum with random combinations
+    4) Random SNR in [MIN_SNR, MAX_SNR], +3dB compensation if multiple noise sources
+    5) Peak normalization to 0.9
 
-        logger = logging.getLogger('sox')
-        logger.propagate = False
+    Notes:
+    - Uses self.random_state for all randomness so you can control it via worker seeding.
+    """
 
-        tfm = sox.Transformer()
-        tfm.set_globals(verbosity=0)
+    def __init__(
+        self,
+        ir_path='/data/akshaj/MusicAI/consistency_IRs',
+        sample_rate=16000,
+        min_snr=25.0,
+        max_snr=45.0,
+        hum_freq=60.0,
+        hpf_hz=80.0,
+        max_ir_seconds=None,  # optionally cap IR length for speed (e.g., 2.0)
+        prob=0.5,             
+        seed=None
+    ):
+        self.sample_rate = int(sample_rate)
+        self.min_snr = float(min_snr)
+        self.max_snr = float(max_snr)
+        self.hum_freq = float(hum_freq)
+        self.hpf_hz = float(hpf_hz)
+        self.max_ir_seconds = max_ir_seconds
+        self.prob = float(prob)
 
-        tfm.pitch(self.random_state.uniform(-0.1, 0.1, 1)[0])
-        tfm.contrast(self.random_state.uniform(0, 100, 1)[0])
+        self.random_state = np.random.RandomState(seed)
 
-        tfm.equalizer(frequency=self.loguniform(32, 4096, 1)[0], 
-            width_q=self.random_state.uniform(1, 2, 1)[0], 
-            gain_db=self.random_state.uniform(-30, 10, 1)[0])
+        self.noise_combinations = [
+            ['white'], ['pink'], ['hum'],
+            ['white', 'pink'], ['white', 'hum'], ['pink', 'hum'],
+            ['white', 'pink', 'hum']
+        ]
 
-        tfm.equalizer(frequency=self.loguniform(32, 4096, 1)[0], 
-            width_q=self.random_state.uniform(1, 2, 1)[0], 
-            gain_db=self.random_state.uniform(-30, 10, 1)[0])
-        
-        tfm.reverb(reverberance=self.random_state.uniform(0, 70, 1)[0])
+        self.pink_b = np.array([0.049922035, -0.095993537, 0.050612699, -0.004408786], dtype=np.float32)
+        self.pink_a = np.array([1.0, -2.494956002, 2.017265875, -0.522189400], dtype=np.float32)
 
-        aug_x = tfm.build_array(input_array=x, sample_rate_in=self.sample_rate)
-        aug_x = pad_truncate_sequence(aug_x, clip_samples)
-        
-        return aug_x
+        # Preload IRs
+        self.irs = []
+        if ir_path:
+            ir_files = sorted(glob.glob(os.path.join(ir_path, '*.wav')))
+            print(f"Augmentor: Loading {len(ir_files)} IR files from {ir_path} ...")
 
-    def loguniform(self, low, high, size):
-        return np.exp(self.random_state.uniform(np.log(low), np.log(high), size))
+            for ir_file in ir_files:
+                try:
+                    ir, _ = librosa.load(ir_file, sr=self.sample_rate, mono=True)
+                    if ir.size == 0:
+                        continue
 
-class TeacherAugmentor(object):
-    def __init__(self):
-        """Data augmentor for Clean Teacher."""
-        self.sample_rate = config.sample_rate
-        self.random_state = np.random.RandomState(1234)
+                    # Optional: cap IR length for speed
+                    if self.max_ir_seconds is not None:
+                        max_len = int(self.max_ir_seconds * self.sample_rate)
+                        if ir.shape[0] > max_len:
+                            ir = ir[:max_len]
 
-    def augment(self, x):
-        clip_samples = len(x)
-        
-        # Initialize SoX
-        tfm = sox.Transformer()
-        tfm.set_globals(verbosity=0)
+                    ir = ir / (np.max(np.abs(ir)) + 1e-9)
+                    self.irs.append(ir.astype(np.float32))
+                except Exception as e:
+                    print(f"Skipping IR {ir_file}: {e}")
 
-        # 1. Pitch: DETUNING ONLY (-0.1 to 0.1 semitones)
-        # We use small values because we are NOT shifting the MIDI labels.
-        tfm.pitch(self.random_state.uniform(-0.1, 0.1, 1)[0])
+            print(f"Augmentor: Successfully loaded {len(self.irs)} IRs.")
 
-        # 2. EQ: Gentle Tone Shaping (Simulates different pickups)
-        # Changed gain from (-30, 10) to (-5, 5) to keep it clean.
-        tfm.equalizer(frequency=self.loguniform(100, 4000, 1)[0], 
-            width_q=self.random_state.uniform(1, 2, 1)[0], 
-            gain_db=self.random_state.uniform(-5, 5, 1)[0])
 
-        # 3. Gain: Volume Normalization (New)
-        # Helps the model handle loud vs quiet recordings.
-        tfm.gain(gain_db=self.random_state.uniform(-3, 3, 1)[0])
+    def acoustic_tone_shaping(self, signal: np.ndarray) -> np.ndarray:
+        """
+        High Pass (>hpf_hz) to remove mud.
+        Uses filtfilt (zero-phase) to ensure no timing shift.
+        """
+        sr = self.sample_rate
+        b_high, a_high = butter(2, self.hpf_hz / (0.5 * sr), btype='high')
+        return filtfilt(b_high, a_high, signal).astype(np.float32)
 
-        # Apply
-        aug_x = tfm.build_array(input_array=x, sample_rate_in=self.sample_rate)
-        aug_x = pad_truncate_sequence(aug_x, clip_samples)
-        
-        return aug_x
 
-    def loguniform(self, low, high, size):
-        return np.exp(self.random_state.uniform(np.log(low), np.log(high), size))
+    @staticmethod
+    def _rms(x: np.ndarray) -> float:
+        return float(np.sqrt(np.mean(x**2))) if x.size else 0.0
+
+    def add_white_noise(self, signal: np.ndarray, snr_db: float) -> np.ndarray:
+        rms_signal = self._rms(signal)
+        if rms_signal == 0:
+            return signal
+        rms_noise = rms_signal / (10 ** (snr_db / 20))
+        noise = self.random_state.normal(0.0, rms_noise, size=signal.shape).astype(np.float32)
+        return (signal + noise).astype(np.float32)
+
+    def add_pink_noise(self, signal: np.ndarray, snr_db: float) -> np.ndarray:
+        rms_signal = self._rms(signal)
+        if rms_signal == 0:
+            return signal
+
+        white = self.random_state.normal(0.0, 1.0, size=signal.shape).astype(np.float32)
+        pink = filtfilt(self.pink_b, self.pink_a, white).astype(np.float32)
+
+        rms_pink = self._rms(pink)
+        if rms_pink == 0:
+            return signal
+
+        rms_target = rms_signal / (10 ** (snr_db / 20))
+        return (signal + pink * (rms_target / (rms_pink + 1e-9))).astype(np.float32)
+
+    def add_mains_hum(self, signal: np.ndarray, snr_db: float) -> np.ndarray:
+        sr = self.sample_rate
+        t = (np.arange(len(signal), dtype=np.float32) / sr)
+        hum_wave = np.sin(2 * np.pi * self.hum_freq * t) + 0.5 * np.sin(2 * np.pi * (2.0 * self.hum_freq) * t)
+
+        rms_signal = self._rms(signal)
+        rms_hum = self._rms(hum_wave)
+        if rms_signal == 0 or rms_hum == 0:
+            return signal
+
+        rms_target = rms_signal / (10 ** (snr_db / 20))
+        return (signal + hum_wave.astype(np.float32) * (rms_target / (rms_hum + 1e-9))).astype(np.float32)
+
+
+    def convolve_ir_zero_latency(self, signal: np.ndarray) -> np.ndarray:
+        """
+        Matches your generator:
+          wet = fftconvolve(signal, ir, mode='full')[:len(signal)]
+        """
+        if not self.irs:
+            return signal
+        ir = self.irs[self.random_state.randint(0, len(self.irs))]
+        wet = scipy.signal.fftconvolve(signal, ir, mode='full')[:len(signal)]
+        return wet.astype(np.float32)
+
+
+    def augment(self, x: np.ndarray) -> np.ndarray:
+        """
+        x: 1D float waveform (already pitch/time shifted upstream in MaestroDataset)
+        returns: augmented waveform, same length
+        """
+        x = x.astype(np.float32, copy=False)
+
+        # Optional: sometimes skip augmentation
+        if self.random_state.rand() > self.prob:
+            return x
+
+        # 1) Tone shaping (HPF, zero-phase)
+        y = self.acoustic_tone_shaping(x)
+
+        # 2) IR convolution (truncate => no global shift)
+        y = self.convolve_ir_zero_latency(y)
+
+        # 3) Add noise combination at random SNR
+        active_noises = self.noise_combinations[self.random_state.randint(0, len(self.noise_combinations))]
+        current_snr = float(self.random_state.uniform(self.min_snr, self.max_snr))
+        final_snr = current_snr + (3.0 if len(active_noises) > 1 else 0.0)
+
+        for noise_type in active_noises:
+            if noise_type == 'white':
+                y = self.add_white_noise(y, final_snr)
+            elif noise_type == 'pink':
+                y = self.add_pink_noise(y, final_snr)
+            elif noise_type == 'hum':
+                y = self.add_mains_hum(y, final_snr)
+
+        # 4) Peak normalization to 0.9
+        max_val = float(np.max(np.abs(y))) if y.size else 0.0
+        if max_val > 0:
+            y = (y / (max_val + 1e-9)) * 0.9
+
+        return y.astype(np.float32)
     
 class Sampler(object):
     def __init__(self, hdf5s_dir, split, segment_seconds, hop_seconds, 
