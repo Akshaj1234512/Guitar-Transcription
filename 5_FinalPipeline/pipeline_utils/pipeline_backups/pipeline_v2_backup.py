@@ -1,35 +1,43 @@
 import pretty_midi
+import py
 import torch
+import jams
 import torch.nn as nn
+from andrea_test import main
 import librosa
 import subprocess
 import os
 import soundfile as sf
 from pathlib import Path
+import sys
 import json
 from typing import List, Tuple
 import numpy as np
+import andrea_test
 import andrea_inference_script
+import technique_tabs
 import technique_tabs_final
 import pipeline_utils.technique_cacher as cache
 
 import argparse
 import shutil
+import scipy.signal
+import scipy.signal.windows
 from BeatNet.BeatNet import BeatNet
 
 # Example usage: python pipeline_v2.py --audio_path /data/shamakg/FrancoisLeduc_Raw/audio/2DC4c.mp3
 
-#----------------------------------------------------------------------------------#
+# TODO: Step 1: Import audio
+# Denoising? MusicAI/Music-AI/0_Preprocessing/guitar_extraction_pipeline.py
 
-# Step 1: Import audio and detect bpm
+#----------------------------------------------------------------------------------#
 
 ### Uses beatnet model (80%+ accuracy). Only issue is octave/bpm multiple correction (which is subjective)   
 def estimate_bpm(audio_path):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     estimator = BeatNet(model=2, mode='offline', inference_model='DBN', device=device)
     output = estimator.process(audio_path)
-    if output is not None:
-        beat_times = output[:, 0]
+    beat_times = output[:, 0]
     intervals = np.diff(beat_times)
     bpms = 60 / intervals[intervals > 0]
 
@@ -84,7 +92,7 @@ def run_akshaj_model(audio_path, model_path, inference_path):
 
 # Step 3: Peter's Model
 
-def find_single_note_onsets(midi_filepath):
+def find_single_note_onsets(midi_filepath, min_duration):
     all_onsets = []
     current_time_ticks = 0
     midi_data = pretty_midi.PrettyMIDI(midi_filepath)
@@ -154,7 +162,7 @@ def audio_midi_to_chunks(audio_path, midi_list):
         List of audio chunks corresponding to each onset/duration pair
     """
     # Load audio file
-    audio, sr = librosa.load(audio_path, sr=None) # type: ignore
+    audio, sr = librosa.load(audio_path, sr=None)
     
     midi_onsets = [midi["onset_time_seconds"] for midi in midi_list]
     midi_durations = [midi["duration_seconds"] for midi in midi_list]
@@ -231,9 +239,9 @@ def run_peter_model_on_chunks(chunk_paths: List[str], onsets, durations):
 
 # STEP 3: Andreas MODEL
 
-def run_andreas_model(midi_file_path, inference):
+def run_andreas_model(midi_file_path, bpm, inference):
     
-    final_tab_list: List[Tuple[str, str]] = inference(midi_file_path)
+    final_tab_list: List[Tuple[str, str]] = inference(midi_file_path, bpm)
 
     print("TAB",final_tab_list)
     
@@ -243,8 +251,25 @@ def run_andreas_model(midi_file_path, inference):
     
     return final_tab_list
 
-# for andreas new postprocessing, should return a list of tuples
 def calculate_onsets(tab_data):
+
+
+    current_onset_ms = 0
+    final_data_with_onsets = []
+    count = 0
+    
+    for string, fret, time_shift_ms in tab_data:
+        final_data_with_onsets.append((string, fret, time_shift_ms, current_onset_ms))
+        current_onset_ms += time_shift_ms
+        if int(fret) == 0:
+            count += 1
+    
+    print("CHECK2:", count)
+        
+    return final_data_with_onsets
+
+# for andreas new postprocessing, should return a list of tuples
+def calculate_onsets_v2(tab_data):
     final_data_with_onsets = []
 
     for event in tab_data:
@@ -265,8 +290,8 @@ def calculate_onsets(tab_data):
 #----------------------------------------------------------------------------------#
 
 # TODO: def calculate_accuracy(actual_tab, predicted_tab)
-
 #### To get updated (in development) pipeline: change tab_inference, post_process_tab, mode
+
 if __name__ == "__main__":
     ### Note: if in testing...read comments with # TESTING
 
@@ -282,7 +307,7 @@ if __name__ == "__main__":
     
     bpm = estimate_bpm(AUDIO_PATH)
     midi_path = run_akshaj_model(AUDIO_PATH, MUSIC_TO_MIDI_PATH, MIDI_INFERENCE_SCRIPT)
-    midi_dict = find_single_note_onsets(midi_path)
+    midi_dict = find_single_note_onsets(midi_path, MIN_AUDIO_SLICE_DURATION)
 
     #----------------------------------------------------------------------------------#
     
@@ -293,12 +318,13 @@ if __name__ == "__main__":
 
     #----------------------------------------------------------------------------------#
 
-    tab_inference, post_process_tab = andrea_inference_script.run_tab_generation, calculate_onsets
-    tab_list = post_process_tab(run_andreas_model(midi_path, tab_inference))
+    tab_inference, post_process_tab = andrea_inference_script.run_tab_generation, calculate_onsets_v2
+    tab_list = post_process_tab(run_andreas_model(midi_path, bpm, tab_inference))
 
     #----------------------------------------------------------------------------------#
 
     output_name, matching_mode = os.path.splitext(os.path.basename(midi_path))[0], "time_matching"
     tab_path = technique_tabs_final.conversion_andreas(midi_path, exp_onset_dur_tuples, tab_list, f"{output_name}_colin.xml", bpm, mode=matching_mode)
+    # tab_working = technique_tabs.conversion_andreas(midi_path, exp_onset_dur_tuples, tab_list, f"{output_name}_working.xml", bpm)
     
     print(tab_path)
