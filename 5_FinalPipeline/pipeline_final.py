@@ -17,7 +17,7 @@ import argparse
 import shutil
 from BeatNet.BeatNet import BeatNet
 
-# Example usage: python pipeline_v2.py --audio_path /data/shamakg/FrancoisLeduc_Raw/audio/2DC4c.mp3
+# Example usage: python pipeline_v2.py --audio_path /data/shamakg/datasets/FrancoisLeduc_Raw/audio/2DC4c.mp3
 
 #----------------------------------------------------------------------------------#
 
@@ -285,8 +285,9 @@ if __name__ == "__main__":
     midi_dict = find_single_note_onsets(midi_path)
 
     #----------------------------------------------------------------------------------#
-    
+
     midi_dict_peter = [event for event in midi_dict if event['duration_seconds'] >= MIN_AUDIO_SLICE_DURATION] # for peter's model
+    # Note: the below function has several path variables you may need to change
     exp_onset_dur_tuples = run_peter_model_on_chunks(*audio_midi_to_chunks(AUDIO_PATH, midi_dict_peter))
     print(exp_onset_dur_tuples)
     # exp_onset_dur_tuples = cache.cached_peter_result(AUDIO_PATH, midi_dict_peter, force_rerun=False) ## for TESTING
