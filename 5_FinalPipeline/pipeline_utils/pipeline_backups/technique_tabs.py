@@ -4,11 +4,11 @@ import os
 import pretty_midi
 from music21 import stream, note, tempo, meter, clef, articulations, expressions, spanner, interval, environment
 import random
-np.int = int # deprecated np.int
 from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple
 from collections import defaultdict
-import math
+
+import tab_generation_utils.preprocess as preprocess
 # TODO: figure out pdf export
 # import lilypond
 
@@ -191,7 +191,7 @@ def jams_to_musicxml_real(jam, output_xml='output.xml', tempo_bpm=120):
     
     # Add metadata
     part.insert(0, tempo.MetronomeMark(number=tempo_bpm))
-    part.insert(0, meter.TimeSignature('4/4'))
+    part.insert(0, meter.TimeSignature('4/4')) # type: ignore
     part.insert(0, clef.TabClef())
     
     # Beat duration
@@ -265,7 +265,7 @@ def jams_to_musicxml_real(jam, output_xml='output.xml', tempo_bpm=120):
         
         # Quantize duration to standard values
         duration_beats = obs.duration / beat_sec
-        # Round to nearest eighth note
+        # Round to nearest 16th note
         quantized = round(duration_beats * 2) / 2
         if quantized < 0.5:
             quantized = 0.5  # Minimum eighth note
@@ -432,18 +432,28 @@ def add_exp_techniques_to_existing_jam(jam, exp_onset_dur_tuples):
     
     return jam
 
-def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples, tuning=STANDARD_TUNING,time_tolerance=0.05):
+
+# change added 01/02: to ensure does not take the same prediction from andrea twice
+def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples, tuning=STANDARD_TUNING,time_tolerance=0.2):
     # load midi
     pm = pretty_midi.PrettyMIDI(midi_path)
     guitar_notes = pm.instruments[0].notes
     
-    tuple_dict = {}
-    for string, fret, _, onset_ms in string_fret_time_tuples:
+    andrea_predictions = []
+    for idx, (string, fret, _, onset_ms) in enumerate(string_fret_time_tuples):
         onset_sec = onset_ms / 1000.0
-        tuple_dict[onset_sec] = (int(string), int(fret))
+        andrea_predictions.append((onset_sec, int(string), int(fret), idx))
     
     print(f"MIDI has {len(guitar_notes)} notes")
     print(f"Received {len(string_fret_time_tuples)} string/fret tuples")
+
+    print("\n=== TIMING DEBUG ===")
+    print("First 10 MIDI notes vs closest Andrea predictions:")
+    for i, n in enumerate(guitar_notes[:10]):
+        closest_andrea = min(andrea_predictions, key=lambda x: abs(x[0] - n.start))[0]  # ← FIX: use andrea_predictions
+        time_diff_ms = abs(n.start - closest_andrea) * 1000
+        print(f"  MIDI note {i}: {n.start:.3f}s, Closest Andrea: {closest_andrea:.3f}s, Diff: {time_diff_ms:.1f}ms")
+    print("===================\n")
     
     jam = jams.JAMS()
     
@@ -464,20 +474,26 @@ def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples,
     matched_count = 0
     unmatched_count = 0
     previous_position = None
+    used_predictions = set()
     
     # align andreas with the midi
     for n in guitar_notes:
         best_match = None
         best_time_diff = float('inf')
+        best_idx = None
         
-        for onset_sec, (string, fret) in tuple_dict.items():
+        for onset_sec, string, fret, idx in andrea_predictions:
+            if idx in used_predictions:  # ← ADD THIS CHECK
+                continue
             time_diff = abs(n.start - onset_sec)
             if time_diff < time_tolerance and time_diff < best_time_diff:
                 best_match = (string, fret)
                 best_time_diff = time_diff
+                best_idx = idx
         
         if best_match:
             string, fret = best_match
+            used_predictions.add(best_idx)
             matched_count += 1
         else:
             # No match found means use intelligent fallback from colin
@@ -508,6 +524,59 @@ def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples,
     return jam
 
 
+### SEQUENTIAL ORDER: uses the fact that their lengths are equal
+def midi_to_jams_with_tablature_from_andreas_sequential(midi_path, string_fret_time_tuples, tuning=STANDARD_TUNING,time_tolerance=0.2):
+    # load midi
+    pm = pretty_midi.PrettyMIDI(midi_path)
+    guitar_notes = pm.instruments[0].notes
+    
+    print(f"MIDI has {len(guitar_notes)} notes")
+    print(f"Received {len(string_fret_time_tuples)} string/fret tuples")
+
+    if len(guitar_notes) != len(string_fret_time_tuples):
+        print(f"WARNING: Length mismatch! MIDI={len(guitar_notes)}, Andrea={len(string_fret_time_tuples)}")
+        return midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples, tuning, time_tolerance)
+    
+    jam = jams.JAMS()
+    
+    # Add note_midi annotation
+    note_ann = jams.Annotation(namespace='note_midi')
+    for n in guitar_notes:
+        note_ann.append(
+            time=n.start,
+            duration=n.end - n.start,
+            value=n.pitch,
+            confidence=n.velocity / 127
+        )
+    jam.annotations.append(note_ann)
+    
+
+    tab_ann = jams.Annotation(namespace='tab_note')
+    
+    for i, n in enumerate(guitar_notes):
+        string, fret, _, _ = string_fret_time_tuples[i]
+        string, fret = int(string), int(fret)
+        value = {
+            "pitch": n.pitch,
+            "string": string,
+            "fret": fret,
+            "techniques": []
+        }
+        
+        tab_ann.append(
+            time=n.start,
+            duration=n.end - n.start,
+            value=value,
+            confidence=n.velocity / 127
+        )
+    
+    jam.annotations.append(tab_ann)
+
+    print(f"Matched all {len(guitar_notes)} notes by sequential order")
+    
+    return jam
+
+
 def conversion(midi_path, exp_onset_dur_tuples, output_name, bpm):
     # Step 1: Create JAMS with tablature
     jam = midi_to_jams_with_tablature(midi_path)
@@ -531,11 +600,13 @@ def conversion(midi_path, exp_onset_dur_tuples, output_name, bpm):
 
 def conversion_andreas(midi_path, exp_onset_dur_tuples, string_fret_tuples, output_name, bpm):
     # Step 1: Create JAMS with tablature
-    jam = midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_tuples)
+    # jam = midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_tuples)
+    # import from andrea
+    jam = midi_to_jams_with_tablature_from_andreas_sequential(midi_path, string_fret_tuples)
 
     # Step 2: Add techniques to EXISTING tab_note annotation
-    #jam = add_random_techniques_to_existing_jam(jam, technique_probability=0.5)
-    jam = add_exp_techniques_to_existing_jam(jam, exp_onset_dur_tuples)
+    #jam = add_random_techniques_to_existing_jam(jam, technique_probability=0.5) --> no longer using random
+    jam = preprocess.add_exp_techniques_to_existing_jam(jam, exp_onset_dur_tuples)
 
     # Step 3: Debug - check techniques are there
     tab_ann = [a for a in jam.annotations if a.namespace == 'tab_note'][0]

@@ -77,7 +77,7 @@ def run_tab_generation(midi_path: str, bpm):
         print("Using CUDA")
     else:
         print("Using CPU")
-    final_tab = process_midi_file(midi_path, tokenizer, model, capo=CAPO, tuning=TUNING, bpm=bpm)
+    final_tab = process_midi_file_chunking(midi_path, tokenizer, model, capo=CAPO, tuning=TUNING, bpm=bpm)
     
     return final_tab
 
@@ -540,6 +540,337 @@ def process_midi_file(
     # RETURN THE CLEAN LIST OF TABS
     return extracted_tabs_list
 
+### process in chunks to make sure that the full midi gets a predicted string fret
+def process_midi_file_v2(
+    midi_path: str,
+    tokenizer: MidiTabTokenizerV3,
+    model: T5ForConditionalGeneration,
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING,
+    bpm: float = 120.0
+):
+    """
+    Process a single MIDI file through the model and post-processing.
+    """
+    midi_file = Path(midi_path)
+    if not midi_file.exists():
+        print(f"ERROR: MIDI file not found at {midi_path}")
+        return
+
+    # 1. Load MIDI and create encoder tokens
+    note_events = midi_to_tab_events(midi_file, bpm)
+
+    if not note_events:
+        print("Skipping (no valid note events found)")
+        return
+
+    # Use the specified capo/tuning for the prediction
+    encoder_tokens = create_encoder_tokens_from_midi(note_events, capo, tuning)
+
+    conditioning_tokens = encoder_tokens[:2]
+    note_tokens = encoder_tokens[2:]
+
+    NOTES_PER_CHUNK = 150
+    TOKENS_PER_NOTE = 3
+
+    all_tabs = []
+    num_chunks = (len(note_tokens) + NOTES_PER_CHUNK * TOKENS_PER_NOTE - 1) // (NOTES_PER_CHUNK * TOKENS_PER_NOTE)
+
+    for chunk in range(num_chunks):
+        start = chunk * NOTES_PER_CHUNK * TOKENS_PER_NOTE
+        end = start + NOTES_PER_CHUNK * TOKENS_PER_NOTE
+        chunk_tokens = conditioning_tokens + note_tokens[start:end]
+    
+        # 2. Encode input
+        encoder_ids = tokenizer.encode_encoder_tokens_shared(chunk_tokens)
+        input_ids = torch.tensor(encoder_ids, dtype=torch.long).unsqueeze(0)
+
+        if torch.cuda.is_available():
+            input_ids = input_ids.cuda()
+
+        # 3. Generate prediction
+        print("  Generating tablature prediction...")
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids,
+                max_length=512,
+                num_beams=1,
+                do_sample=False,
+                eos_token_id=tokenizer.shared_token_to_id["<eos>"],
+                pad_token_id=tokenizer.shared_token_to_id["<pad>"],
+            )
+
+        # 4. Decode prediction
+        pred_ids = outputs[0].cpu().tolist()
+        pred_tokens = tokenizer.shared_to_decoder_tokens(pred_ids)
+        
+        # 5. Compute original metrics (only pitch/time accuracy vs input, Tab acc is 0.0)
+        original_metrics = compute_accuracy_metrics(
+            chunk_tokens, pred_tokens, capo, tuning,
+            ground_truth_tokens=None
+        )
+        
+        # 6. Apply post-processing
+        print("  Applying post-processing for pitch and time shift correction...")
+        # Check if we should enable debug mode 
+        # (always enable debug for a single file or if issues are detected)
+        has_errors = (original_metrics['pitch_accuracy'] < 100 or
+                    original_metrics['time_shift_accuracy'] < 100)
+
+        postprocessed_tokens, correction_stats = postprocess_predictions(
+            chunk_tokens, pred_tokens, capo, tuning, pitch_window=5, alignment_window=5, debug=has_errors
+        )
+
+        # 7. Compute post-processed metrics (only pitch/time accuracy vs input)
+        postprocessed_metrics = compute_accuracy_metrics(
+            chunk_tokens, postprocessed_tokens, capo, tuning,
+            ground_truth_tokens=None
+        )
+
+        # 8. Display results
+        print("\n" + "=" * 80)
+        print(f"RESULTS FOR: {midi_file.name}")
+        print("=" * 80)
+
+        # Convert corrected tokens to human-readable tablature format
+        postprocessed_tabs = [
+            t for t in postprocessed_tokens if t.startswith("TAB<")
+        ]
+        postprocessed_shifts = [
+            t for t in postprocessed_tokens if t.startswith("TIME_SHIFT<")
+        ]
+        
+        print("\n### Final Corrected Tablature Tokens ###")
+        print("----------------------------------------")
+        
+        # Print the token sequence in pairs
+        for i in range(len(postprocessed_tabs)):
+            tab_token = postprocessed_tabs[i]
+            shift_token = postprocessed_shifts[i] if i < len(postprocessed_shifts) else "TIME_SHIFT<ERROR>"
+            print(f"{tab_token} {shift_token}")
+
+        print("\n### Pitch/Time Shift Accuracy vs Input MIDI ###")
+        print("-----------------------------------------------")
+        print(f"  Original Prediction:       Pitch={original_metrics['pitch_accuracy']:.1f}%, TimeShift={original_metrics['time_shift_accuracy']:.1f}%")
+        print(f"  Post-processed Prediction: Pitch={postprocessed_metrics['pitch_accuracy']:.1f}%, TimeShift={postprocessed_metrics['time_shift_accuracy']:.1f}%")
+
+        print("\n### Correction Summary ###")
+        print("--------------------------")
+        print(f"  Pitch Corrections:     {correction_stats['pitch_corrections']}")
+        print(f"  Time Shift Corrections:{correction_stats['time_shift_corrections']}")
+        print(f"  Pitch Too Far:         {correction_stats['pitch_too_far']}")
+        print(f"  Unaligned Outputs:     {correction_stats['unaligned_outputs']}")
+        print("=" * 80)
+
+
+        
+        # get tokens from andrea:
+        
+        for i in range(0, len(postprocessed_tokens), 2):
+            tab_token = postprocessed_tokens[i]
+
+            if not tab_token.startswith("TAB<"):
+                continue 
+
+            string, fret = tab_token[4:-1].split(',')
+            time_shift_ms = 0 # Initialize default to 0
+
+            if i + 1 < len(postprocessed_tokens):
+                shift_token = postprocessed_tokens[i+1]
+                
+                if shift_token.startswith('TIME_SHIFT<'):
+                    try:
+                        # Extract the content between '<' and '>'
+                        shift_value_str = shift_token.split('<')[-1].replace('>', '')
+                        
+                        # FINAL CHECK: Trim leading/trailing whitespace which is often the cause of failure
+                        time_shift_ms = int(shift_value_str.strip()) 
+                    except ValueError as e:
+                        # Catch if the string cannot be converted to an integer
+                        print(f"Extraction ERROR on token: {shift_token}. Value defaulted to 0. Error: {e}")
+                        time_shift_ms = 0
+            
+            all_tabs.append((string, fret, time_shift_ms))
+        
+    return all_tabs
+
+    # --- Print Debug/Summary Info (Keep this for console logging) ---
+    print("\n" + "=" * 80)
+    print(f"RESULTS FOR: {midi_file.name}")
+    print("=" * 80)
+    print(f"  Post-processed Prediction: Pitch={postprocessed_metrics['pitch_accuracy']:.1f}%, TimeShift={postprocessed_metrics['time_shift_accuracy']:.1f}%")
+    print(f"  Total Extracted Tabs: {len(extracted_tabs_list)}")
+    print("=" * 80)
+    # --- End Print Debug/Summary Info ---
+    
+    # RETURN THE CLEAN LIST OF TABS
+    return extracted_tabs_list
+
+
+def process_midi_file_chunking(
+    midi_path: str,
+    tokenizer: MidiTabTokenizerV3,
+    model: T5ForConditionalGeneration,
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING,
+    bpm: float = 120.0
+):
+    """
+    Process a single MIDI file through the model and post-processing.
+    """
+    midi_file = Path(midi_path)
+    if not midi_file.exists():
+        print(f"ERROR: MIDI file not found at {midi_path}")
+        return
+
+    # 1. Load MIDI and create encoder tokens
+    note_events = midi_to_tab_events(midi_file, bpm)
+
+    if not note_events:
+        print("Skipping (no valid note events found)")
+        return
+
+    # Use the specified capo/tuning for the prediction
+    encoder_tokens = create_encoder_tokens_from_midi(note_events, capo, tuning)
+
+    conditioning_tokens = encoder_tokens[:2]
+    note_tokens = encoder_tokens[2:]
+
+    NOTES_PER_CHUNK = 150 # arbitrary
+    TOKENS_PER_NOTE = 3 # pitch/onset/duration
+    OVERLAP_NOTES = 50 # arbitrary
+    STEP_NOTES = NOTES_PER_CHUNK - OVERLAP_NOTES
+    
+
+    all_tabs = []
+    total_notes = len(note_tokens) // TOKENS_PER_NOTE
+    
+    for start_note in range(0, total_notes, STEP_NOTES):
+        start = start_note * TOKENS_PER_NOTE
+        end = min(start + NOTES_PER_CHUNK * TOKENS_PER_NOTE, len(note_tokens))
+        chunk_tokens = conditioning_tokens + note_tokens[start:end]
+        new_notes_start_index = 0 if start_note == 0 else OVERLAP_NOTES
+        
+    
+        # 2. Encode input
+        encoder_ids = tokenizer.encode_encoder_tokens_shared(chunk_tokens)
+        input_ids = torch.tensor(encoder_ids, dtype=torch.long).unsqueeze(0)
+
+        if torch.cuda.is_available():
+            input_ids = input_ids.cuda()
+
+        # 3. Generate prediction
+        print("  Generating tablature prediction...")
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids,
+                max_length=512,
+                num_beams=1,
+                do_sample=False,
+                eos_token_id=tokenizer.shared_token_to_id["<eos>"],
+                pad_token_id=tokenizer.shared_token_to_id["<pad>"],
+            )
+
+        # 4. Decode prediction
+        pred_ids = outputs[0].cpu().tolist()
+        pred_tokens = tokenizer.shared_to_decoder_tokens(pred_ids)
+        
+        # 5. Compute original metrics (only pitch/time accuracy vs input, Tab acc is 0.0)
+        original_metrics = compute_accuracy_metrics(
+            chunk_tokens, pred_tokens, capo, tuning,
+            ground_truth_tokens=None
+        )
+        
+        # 6. Apply post-processing
+        print("  Applying post-processing for pitch and time shift correction...")
+        # Check if we should enable debug mode 
+        # (always enable debug for a single file or if issues are detected)
+        has_errors = (original_metrics['pitch_accuracy'] < 100 or
+                    original_metrics['time_shift_accuracy'] < 100)
+
+        postprocessed_tokens, correction_stats = postprocess_predictions(
+            chunk_tokens, pred_tokens, capo, tuning, pitch_window=5, alignment_window=5, debug=has_errors
+        )
+
+        # 7. Compute post-processed metrics (only pitch/time accuracy vs input)
+        postprocessed_metrics = compute_accuracy_metrics(
+            chunk_tokens, postprocessed_tokens, capo, tuning,
+            ground_truth_tokens=None
+        )
+
+        # 8. Display results
+        print("\n" + "=" * 80)
+        print(f"RESULTS FOR: {midi_file.name}")
+        print("=" * 80)
+
+        # Convert corrected tokens to human-readable tablature format
+        postprocessed_tabs = [
+            t for t in postprocessed_tokens if t.startswith("TAB<")
+        ]
+        postprocessed_shifts = [
+            t for t in postprocessed_tokens if t.startswith("TIME_SHIFT<")
+        ]
+        
+        print("\n### Final Corrected Tablature Tokens ###")
+        print("----------------------------------------")
+        
+        # Print the token sequence in pairs
+        for i in range(len(postprocessed_tabs)):
+            tab_token = postprocessed_tabs[i]
+            shift_token = postprocessed_shifts[i] if i < len(postprocessed_shifts) else "TIME_SHIFT<ERROR>"
+            print(f"{tab_token} {shift_token}")
+
+        print("\n### Pitch/Time Shift Accuracy vs Input MIDI ###")
+        print("-----------------------------------------------")
+        print(f"  Original Prediction:       Pitch={original_metrics['pitch_accuracy']:.1f}%, TimeShift={original_metrics['time_shift_accuracy']:.1f}%")
+        print(f"  Post-processed Prediction: Pitch={postprocessed_metrics['pitch_accuracy']:.1f}%, TimeShift={postprocessed_metrics['time_shift_accuracy']:.1f}%")
+
+        print("\n### Correction Summary ###")
+        print("--------------------------")
+        print(f"  Pitch Corrections:     {correction_stats['pitch_corrections']}")
+        print(f"  Time Shift Corrections:{correction_stats['time_shift_corrections']}")
+        print(f"  Pitch Too Far:         {correction_stats['pitch_too_far']}")
+        print(f"  Unaligned Outputs:     {correction_stats['unaligned_outputs']}")
+        print("=" * 80)
+
+
+        
+        # get tokens from andrea:
+        note_index = 0
+        for i in range(0, len(postprocessed_tokens), 2):
+            if i >= len(postprocessed_tokens):
+                break
+
+            tab_token = postprocessed_tokens[i]
+
+            if not tab_token.startswith("TAB<"):
+                continue 
+
+            time_shift_ms = 0 # Initialize default to 0
+
+            if note_index >= new_notes_start_index:
+                string, fret = tab_token[4:-1].split(',')
+                time_shift_ms = 0
+
+                if i + 1 < len(postprocessed_tokens):
+                    shift_token = postprocessed_tokens[i+1]
+                    
+                    if shift_token.startswith('TIME_SHIFT<'):
+                        try:
+                            # Extract the content between '<' and '>'
+                            shift_value_str = shift_token.split('<')[-1].replace('>', '')
+                            
+                            # FINAL CHECK: Trim leading/trailing whitespace which is often the cause of failure
+                            time_shift_ms = int(shift_value_str.strip()) 
+                        except ValueError as e:
+                            # Catch if the string cannot be converted to an integer
+                            print(f"Extraction ERROR on token: {shift_token}. Value defaulted to 0. Error: {e}")
+                            time_shift_ms = 0
+            
+                all_tabs.append((string, fret, time_shift_ms))
+            note_index += 1
+        
+    return all_tabs
 
 def main(bpm):
     """Main execution point for single MIDI file processing."""
