@@ -225,6 +225,17 @@ def apply_techniques_to_note(n, techniques, note_index, technique_map):
         techniques: List of technique strings from the note event
         note_index: Current note index for technique mapping
         technique_map: Dict to store technique info for post-processing
+
+    Legend from Peter's Predictions
+    'harmonics'     
+    'palm_muting' # not used
+    'slide'
+    'hammer_on_pull_off'
+    'picking'
+    'bend'
+    'kick_drum'
+    'vibrato'
+    'snare_drum' (?)
     """
     for tech in techniques:
         if not tech:
@@ -241,6 +252,13 @@ def apply_techniques_to_note(n, techniques, note_index, technique_map):
             print(f"  pull-off detected at note {note_index}")
             technique_map[note_index] = {
                 'technique': 'pull-off',
+                'is_target': True
+            }
+        ### Added new class from Peter's classification (above two won't really happen)
+        elif tech in ['hammer_on_pull_off']:
+            print(f"  hammer_on_pull_off detected at note {note_index}")
+            technique_map[note_index] = {
+                'technique': 'hammer_on_pull_off',
                 'is_target': True
             }
         
@@ -261,7 +279,7 @@ def apply_techniques_to_note(n, techniques, note_index, technique_map):
             print(f"  vibrato detected at note {note_index}")
             n.articulations.append(articulations.Fingering('vibrato'))
         
-        elif tech == 'harmonic':
+        elif tech == 'harmonics': 
             print(f"  harmonic detected at note {note_index}")
             n.articulations.append(articulations.Harmonic())
 

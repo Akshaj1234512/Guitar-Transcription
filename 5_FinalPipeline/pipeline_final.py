@@ -183,9 +183,7 @@ def run_peter_model_on_chunks(chunk_paths: List[str], onsets, durations):
     BASE_DIR="/data/shamakg/music_ai_pipeline/"
     INPUT_DIR="/data/shamakg/music_ai_pipeline/audio_slices/"
     
-    MODEL_DIR="/data/shamakg/music_ai_pipeline/expTechInfer_12-14-2025/models_cnn_lstm/setupB-eg_ipt-plus4/run-20251212-231215"
-    MODEL_FILE="/data/shamakg/music_ai_pipeline/expTechInfer_12-14-2025/models_cnn_lstm/setupB-eg_ipt-plus4/run-20251212-231215/cnn_lstm_best.h5"
-
+    MODEL_DIR="/data/shamakg/music_ai_pipeline/expTechInfer_12-14-2025/models_cnn_lstm/final_model/run-20260112-131057"
     INFERENCE_FILE = "/data/shamakg/music_ai_pipeline/expTechInfer_12-14-2025/scripts/infer_cnn_lstm.py"
 
     if 'TF_USE_LEGACY_KERAS' in os.environ:

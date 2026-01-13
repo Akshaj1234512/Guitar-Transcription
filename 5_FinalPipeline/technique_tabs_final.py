@@ -114,6 +114,25 @@ def jams_to_musicxml_real(jam, output_xml, tempo_bpm, title=None, composer=None)
             'fret': val['fret'],
             'techniques': val.get('techniques', [])
         })
+
+    #----------------------------------------------------------------------------------#
+
+    ### Hammer-on/pull-off processing (added by Shamak), very simple hammer-on, pull-off logic
+    for i in range(1, len(note_events)):
+        current = note_events[i]
+        prev = note_events[i-1]
+        if 'hammer_on_pull_off' in current['techniques']:
+            current['techniques'] = [t for t in current['techniques'] if t != 'hammer_on_pull_off'] ### remove the default technique here
+            if current['string'] == prev['string']:
+                if current['pitch'] > prev['pitch']:
+                    current['techniques'].append('hammer-on')
+                else:
+                    current['techniques'].append('pull-off')
+            else:
+                current['techniques'].append('hammer-on')
+    ### End Hammer-on/pull-off logic
+
+    #----------------------------------------------------------------------------------#
     
     # Calculate total duration and number of complete measures needed
     if note_events:
