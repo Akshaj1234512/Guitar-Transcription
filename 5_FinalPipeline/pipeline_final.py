@@ -17,7 +17,7 @@ import argparse
 import shutil
 from BeatNet.BeatNet import BeatNet
 
-# Example usage: python pipeline_v2.py --audio_path /data/shamakg/datasets/FrancoisLeduc_Raw/audio/2DC4c.mp3
+# Example usage: python pipeline_final.py --audio_path /data/shamakg/datasets/FrancoisLeduc_Raw/audio/2DC4c.mp3
 
 #----------------------------------------------------------------------------------#
 

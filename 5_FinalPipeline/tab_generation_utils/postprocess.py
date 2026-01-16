@@ -44,9 +44,12 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None):
         for elem in measure:
             if elem.tag == 'note':
                 # Skip chord notes (notes that are part of a chord have <chord/> element)
-                chord_elem = elem.find('chord')
+
+                ## Change added by Shamak -- even chords can have techniques, and removing them disrupts the technique ID Count
+                # chord_elem = elem.find('chord')
                 rest_elem = elem.find('rest')
-                if chord_elem is None and rest_elem is None:
+                # if chord_elem is None and rest_elem is None:
+                if rest_elem is None:
                     all_notes.append(elem)
     
     print(f"  Found {len(all_notes)} notes for technique processing")
