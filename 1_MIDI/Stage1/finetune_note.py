@@ -14,7 +14,7 @@ import torch.optim as optim
 import torch.utils.data
 
 from utilities import (create_folder, StatisticsContainer)
-from data_generator import Augmentor, collate_fn, TeacherAugmentor
+from data_generator import Augmentor, collate_fn
 from models import Regress_onset_offset_frame_velocity_CRNN  # NOTE-ONLY
 from pytorch_utils import move_data_to_device
 from losses import get_loss_func
