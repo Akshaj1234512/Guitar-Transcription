@@ -15,7 +15,7 @@ STANDARD_TUNING = {
 
 
 # change added 01/02: to ensure does not take the same prediction from andrea twice
-def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples, bpm = 120, tuning=STANDARD_TUNING,time_tolerance=0.2):
+def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples, bpm = 120, tuning=STANDARD_TUNING,time_tolerance=0.2, capo = 0):
     '''function mostly borrowed from colin's technique tabs, with the addition of aligning andrea's predictions with MIDI'''
     # load midi
     pm = pretty_midi.PrettyMIDI(midi_path)
@@ -45,6 +45,10 @@ def midi_to_jams_with_tablature_from_andreas(midi_path, string_fret_time_tuples,
     jam.sandbox.time_signature = time_signature
     jam.sandbox.time_sig_numerator = time_sig_numerator
     jam.sandbox.time_sig_denominator = time_sig_denominator
+
+    # untested - 01/21/26 - Shamak
+    jam.sandbox.tuning = tuning
+    jam.sandbox.capo = capo
     jam.sandbox.update()
 
     #----------------------------------------------------------------------------------#
@@ -189,6 +193,8 @@ def midi_to_jams_with_tablature_from_andreas_sequential(midi_path, string_fret_t
     jam.sandbox.time_signature = time_signature
     jam.sandbox.time_sig_numerator = time_sig_numerator
     jam.sandbox.time_sig_denominator = time_sig_denominator
+    #untested - 01/21/2026 - Shamak
+    
 
     #----------------------------------------------------------------------------------#
 

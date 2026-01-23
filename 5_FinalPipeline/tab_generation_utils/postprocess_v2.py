@@ -14,39 +14,105 @@ from collections import defaultdict
 import math
 
 
-def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
+def post_process_musicxml(xml_path, technique_map=None, tuning=None, extend_notes_to_fill=True):
     """
-    Post-process MusicXML to add proper Guitar Pro compatible elements.
+    Post-process MusicXML to add proper Guitar Pro compatible elements
+    and optionally extend notes to fill measures (removing trailing rests).
     
     Args:
         xml_path: Path to the MusicXML file
         technique_map: Dict mapping note indices to technique info
-                      {note_index: {'technique': 'hammer-on'|'pull-off', 'is_target': bool}}
-        tuning: List of MIDI note numbers for each string (low to high), 
-                defaults to standard tuning [40, 45, 50, 55, 59, 64] (E2-E4)
+        tuning: List of MIDI note numbers for each string (low to high)
+        extend_notes_to_fill: If True, removes trailing rests and extends the 
+                              preceding note to fill the measure
     """
-    from lxml import etree # type: ignore
-
-    
+    from lxml import etree
     
     if technique_map is None:
         technique_map = {}
     
-    # Standard guitar tuning (string 6 to string 1): E2, A2, D3, G3, B3, E4
-    # MIDI note numbers: 40, 45, 50, 55, 59, 64
     if tuning is None:
-        tuning = [40, 45, 50, 55, 59, 64]  # Low E to high E
+        tuning = [40, 45, 50, 55, 59, 64]
     
     tree = etree.parse(xml_path)
     root = tree.getroot()
-
-    # Collect all non-chord notes in order across all measures
+    
+    # =========================================================================
+    # EXTEND NOTES TO FILL MEASURES (remove trailing rests)
+    # =========================================================================
+    if extend_notes_to_fill:
+        # MusicXML duration is in divisions - we need to find the divisions value
+        divisions = 1
+        attributes = root.find('.//attributes')
+        if attributes is not None:
+            div_elem = attributes.find('divisions')
+            if div_elem is not None:
+                divisions = int(div_elem.text)
+        
+        print(f"  XML divisions per quarter note: {divisions}")
+        
+        for measure in root.iter('measure'):
+            # Get all note elements in this measure
+            notes_in_measure = list(measure.findall('note'))
+            
+            if not notes_in_measure:
+                continue
+            
+            # Find trailing rests and the last non-rest note
+            trailing_rests = []
+            last_note_elem = None
+            
+            # Walk backwards through notes to find trailing rests
+            for note_elem in reversed(notes_in_measure):
+                rest_elem = note_elem.find('rest')
+                if rest_elem is not None:
+                    trailing_rests.append(note_elem)
+                else:
+                    last_note_elem = note_elem
+                    break
+            
+            # If we found trailing rests and a note to extend
+            if trailing_rests and last_note_elem is not None:
+                # Calculate total duration of trailing rests
+                total_rest_duration = 0
+                for rest_note in trailing_rests:
+                    duration_elem = rest_note.find('duration')
+                    if duration_elem is not None:
+                        total_rest_duration += int(duration_elem.text)
+                
+                # Add this duration to the last note
+                last_note_duration = last_note_elem.find('duration')
+                if last_note_duration is not None:
+                    original_duration = int(last_note_duration.text)
+                    new_duration = original_duration + total_rest_duration
+                    last_note_duration.text = str(new_duration)
+                    
+                    # Also need to update the <type> element to match new duration
+                    # This is complex because we need to map duration to note type
+                    # For now, just remove the type element and let readers infer from duration
+                    type_elem = last_note_elem.find('type')
+                    if type_elem is not None:
+                        last_note_elem.remove(type_elem)
+                    
+                    # Remove dot elements too since duration changed
+                    for dot in last_note_elem.findall('dot'):
+                        last_note_elem.remove(dot)
+                
+                # Remove the trailing rests from the measure
+                for rest_note in trailing_rests:
+                    measure.remove(rest_note)
+                
+                print(f"  Measure {measure.get('number')}: Extended note by {total_rest_duration} divisions, removed {len(trailing_rests)} trailing rest(s)")
+    
+    # =========================================================================
+    # PROCESS TECHNIQUES (hammer-on, pull-off, etc.)
+    # =========================================================================
+    
+    # Collect all non-chord, non-rest notes in order
     all_notes = []
     for measure in root.iter('measure'):
         for elem in measure:
             if elem.tag == 'note':
-                # Skip chord notes (notes that are part of a chord have <chord/> element)
-
                 ## Change added by Shamak -- even chords can have techniques, and removing them disrupts the technique ID Count
                 # chord_elem = elem.find('chord')
                 rest_elem = elem.find('rest')
@@ -57,7 +123,6 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
     print(f"  Found {len(all_notes)} notes for technique processing")
     print(f"  Technique map: {technique_map}")
     
-    # Process techniques - add hammer-on/pull-off and slur elements
     for note_idx, tech_info in technique_map.items():
         if note_idx >= len(all_notes) or note_idx < 1:
             print(f"  Warning: Invalid note index {note_idx}")
@@ -65,12 +130,9 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
         
         technique = tech_info['technique']
         
-        # The target note (where the technique ends - the note you hammer ON TO or pull OFF TO)
         target_note = all_notes[note_idx]
-        # The source note (where the technique starts - the note you hammer FROM or pull FROM)
         source_note = all_notes[note_idx - 1]
         
-        # Verify both notes have pitch (not rests)
         source_pitch = source_note.find('pitch')
         target_pitch = target_note.find('pitch')
         
@@ -80,15 +142,14 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
         
         print(f"  Adding {technique} from note {note_idx-1} to note {note_idx}")
         
-        # Determine element name and text based on technique
         if technique == 'hammer-on':
             tech_elem_name = 'hammer-on'
             tech_text = 'H'
-        else:  # pull-off
+        else:
             tech_elem_name = 'pull-off'
             tech_text = 'P'
         
-        # === SOURCE NOTE (technique start) ===
+        # SOURCE NOTE
         source_notations = source_note.find('notations')
         if source_notations is None:
             source_notations = etree.SubElement(source_note, 'notations')
@@ -97,20 +158,16 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
         if source_technical is None:
             source_technical = etree.SubElement(source_notations, 'technical')
         
-        # Remove any existing hammer-on/pull-off elements (but NOT string/fret!)
         for elem in list(source_technical):
             if elem.tag in ('hammer-on', 'pull-off'):
                 source_technical.remove(elem)
         
-        # Insert technique element at the beginning
         tech_start = etree.Element(tech_elem_name)
         tech_start.set('type', 'start')
         tech_start.set('number', '1')
         tech_start.text = tech_text
         source_technical.insert(0, tech_start)
         
-        # Add slur start
-        # Remove any existing slur first
         for elem in list(source_notations):
             if elem.tag == 'slur':
                 source_notations.remove(elem)
@@ -118,7 +175,7 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
         slur_start = etree.SubElement(source_notations, 'slur')
         slur_start.set('type', 'start')
         
-        # === TARGET NOTE (technique stop) ===
+        # TARGET NOTE
         target_notations = target_note.find('notations')
         if target_notations is None:
             target_notations = etree.SubElement(target_note, 'notations')
@@ -127,18 +184,15 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
         if target_technical is None:
             target_technical = etree.SubElement(target_notations, 'technical')
         
-        # Remove any existing hammer-on/pull-off elements (but NOT string/fret!)
         for elem in list(target_technical):
             if elem.tag in ('hammer-on', 'pull-off'):
                 target_technical.remove(elem)
         
-        # Insert technique element at the beginning
         tech_stop = etree.Element(tech_elem_name)
         tech_stop.set('type', 'stop')
         tech_stop.set('number', '1')
         target_technical.insert(0, tech_stop)
         
-        # Add slur stop (no number attribute)
         for elem in list(target_notations):
             if elem.tag == 'slur':
                 target_notations.remove(elem)
@@ -146,7 +200,9 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
         slur_stop = etree.SubElement(target_notations, 'slur')
         slur_stop.set('type', 'stop')
 
-    # Process other techniques (vibrato, harmonic, etc.)
+    # =========================================================================
+    # PROCESS OTHER TECHNIQUES (vibrato, harmonic)
+    # =========================================================================
     for measure in root.iter('measure'):
         elements = list(measure)
         measure[:] = []
@@ -159,7 +215,6 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
                 if notations is not None:
                     technical = notations.find('technical')
                     if technical is not None:
-                        # Check for harmonic
                         harmonic = technical.find('harmonic')
                         if harmonic is not None:
                             direction = etree.Element('direction')
@@ -173,7 +228,6 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
                             words.text = 'Harm.'
                             measure.append(direction)
                         
-                        # Check for vibrato marker
                         fingering = technical.find('fingering')
                         if fingering is not None and fingering.text == 'vibrato':
                             technical.remove(fingering)
@@ -181,14 +235,15 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
                 
                 measure.append(elem)
                 
-                # Add Guitar Pro vibrato processing instruction after the note
                 if has_vibrato:
                     vibrato_pi = etree.ProcessingInstruction('GP', '<root><vibrato type="Slight"/></root>')
                     elem.append(vibrato_pi)
             else:
                 measure.append(elem)
     
-    # Set guitar instrument
+    # =========================================================================
+    # SET GUITAR INSTRUMENT
+    # =========================================================================
     for score_part in root.iter('score-part'):
         part_id = score_part.get('id')
         
@@ -220,7 +275,8 @@ def post_process_musicxml(xml_path, technique_map=None, tuning=None, capo=0):
     tree.write(xml_path, encoding='utf-8', xml_declaration=True)
     print(f"✓ Post-processed {xml_path}")
 
-### UPDATED BY SHAMAK TO MATCH PETER'S TECHNIQUES
+
+
 def apply_techniques_to_note(n, techniques, note_index, technique_map):
     """
     Apply techniques to a music21 Note and update the technique map for post-processing.

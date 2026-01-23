@@ -5,24 +5,36 @@ Inference from Andrea
 
 from pathlib import Path
 import sys
+from typing import Tuple
 import pretty_midi
-import importlib
+
+# fix for system environment
+sys.path.insert(0, str(Path(__file__).parent))
+
+import t5_fretting_transformer.src.fret_t5 as fret_t5
+sys.modules['fret_t5'] = fret_t5
+####
+
+from t5_fretting_transformer.src.fret_t5.inference import FretT5Inference
 
 
-### system path fix, you may need to change below based on where your src folder is (and inference model)
-from fret_t5.inference import FretT5Inference
-###
+# Standard acoustic guitar tuning (string 1 == high E) (taken from Andrea's util scripts)
+STANDARD_TUNING: Tuple[int, ...] = (64, 59, 55, 50, 45, 40)
+HALF_STEP_DOWN_TUNING: Tuple[int, ...] = tuple(pitch - 1 for pitch in STANDARD_TUNING)
+FULL_STEP_DOWN_TUNING: Tuple[int, ...] = tuple(pitch - 2 for pitch in STANDARD_TUNING)
+DROP_D_TUNING: Tuple[int, ...] = (64, 59, 55, 50, 45, 38)
 
 
-
-def run_tab_generation(midi_path):
+def run_tab_generation(midi_path, capo=0, tuning=STANDARD_TUNING):
     ''' run inference on andrea's model '''
     inference = FretT5Inference(
-        checkpoint_path="/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/src/fret_t5/best_model.pt",
-        tokenizer_path="/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/src/fret_t5/universal_tokenizer"
+        checkpoint_path="/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/src_backup/fret_t5/best_model.pt",
+        tokenizer_path="/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/t5_fretting_transformer/universal_tokenizer"
     )
     midi_notes = load_midi_notes(midi_path)
-    tab_events = inference.predict_with_timing(midi_notes)
+    print("Andrea Capo", capo)
+    print("Andrea Tuning",tuning)
+    tab_events = inference.predict_with_timing(midi_notes, capo=capo, tuning=tuning)
     
     return tab_events
 

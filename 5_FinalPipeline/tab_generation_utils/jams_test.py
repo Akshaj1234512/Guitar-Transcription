@@ -81,8 +81,10 @@ def save_jam(jam, output_name):
         if os.path.exists(jams_output_path):
             print(f"✓ JAMS saved to: {os.path.abspath(jams_output_path)}")
             print(f"  File size: {os.path.getsize(jams_output_path)} bytes")
+            return jams_output_path
         else:
             print(f"✗ JAMS file was NOT created")
+            return None
             
     except Exception as e:
         print(f"Warning: Could not save JAMS file: {e}")

@@ -10,14 +10,50 @@ import json
 from typing import List, Tuple
 import numpy as np
 import andrea_inference_script
-import technique_tabs_final
+import technique_tabs_final_new as tab_generator
 import pipeline_utils.technique_cacher as cache
-
+import tab_generation_utils.postprocess_v2 as postprocess
+import tab_generation_utils.preprocess as preprocess
 import argparse
 import shutil
+from tab_generation_final import main as tab_generator_final
 from BeatNet.BeatNet import BeatNet
+import tab_generation_utils.jams_test as j
 
-# Example usage: python pipeline_final.py --audio_path /data/shamakg/datasets/FrancoisLeduc_Raw/audio/2DC4c.mp3
+# Example usage: python pipeline_v2.py --audio_path /data/shamakg/datasets/FrancoisLeduc_Raw/audio/2DC4c.mp3
+
+#----------------------------------------------------------------------------------#
+
+# Tuning util (for pipeliine input)
+
+STANDARD_TUNING: Tuple[int, ...] = (64, 59, 55, 50, 45, 40)
+HALF_STEP_DOWN_TUNING: Tuple[int, ...] = tuple(pitch - 1 for pitch in STANDARD_TUNING)
+FULL_STEP_DOWN_TUNING: Tuple[int, ...] = tuple(pitch - 2 for pitch in STANDARD_TUNING)
+DROP_D_TUNING: Tuple[int, ...] = (64, 59, 55, 50, 45, 38)
+
+def tuning_conversion(chars):
+    ## These are the standard octaves according to tuning charts online
+    if chars == STANDARD_TUNING:
+        return STANDARD_TUNING
+    chars = chars.split()
+    octave_map = [2, 2, 3, 3, 3, 4]
+    ## offsets from C
+    base_offsets = {
+        'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+        'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8,
+        'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+    }
+    midi_tuning = []
+    for i, char in enumerate(chars):
+        char = char.strip().title() ## first letter uppercase, second lowercase
+        octave = octave_map[i]
+
+        midi_note = (octave + 1) * 12 + base_offsets[char]
+        midi_tuning.append(midi_note)
+    
+    print("TUNING", tuple(reversed(midi_tuning)))
+    ### RETURNS TUPLE FROM HIGH TO LOW
+    return tuple(reversed(midi_tuning))
 
 #----------------------------------------------------------------------------------#
 
@@ -181,7 +217,7 @@ def run_peter_model_on_chunks(chunk_paths: List[str], onsets, durations):
     PYTHON_EXECUTABLE = "/data/samhita/.venv/bin/python"
 
     BASE_DIR="/data/shamakg/music_ai_pipeline/"
-    INPUT_DIR="/data/shamakg/music_ai_pipeline/audio_slices/"
+    INPUT_DIR="/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/audio_slices/"
     
     MODEL_DIR="/data/shamakg/music_ai_pipeline/expTechInfer_12-14-2025/models_cnn_lstm/final_model/run-20260112-131057"
     INFERENCE_FILE = "/data/shamakg/music_ai_pipeline/expTechInfer_12-14-2025/scripts/infer_cnn_lstm.py"
@@ -219,7 +255,14 @@ def run_peter_model_on_chunks(chunk_paths: List[str], onsets, durations):
     path_to_prediction_map = {os.path.basename(item['wav_path']): item["pred_label"] for item in predictions_data['predictions']}
     expressive_techniques = []
 
+    if len(chunk_paths) != len(path_to_prediction_map):
+        missing = set([os.path.basename(p) for p in chunk_paths]) - set(path_to_prediction_map.keys())
+        print(f"Files the model SKIPPED: {list(missing)[:5]}")
+
     for path in chunk_paths:
+        if os.path.basename(path) not in path_to_prediction_map:
+            print("SKIPPED!")
+            print(os.path.basename(path))
         prediction = path_to_prediction_map.get(os.path.basename(path), "Normal")
         expressive_techniques.append(prediction)
 
@@ -229,15 +272,17 @@ def run_peter_model_on_chunks(chunk_paths: List[str], onsets, durations):
 
 # STEP 3: Andreas MODEL
 
-def run_andreas_model(midi_file_path, inference):
+def run_andreas_model(midi_file_path, inference, capo=0, tuning=STANDARD_TUNING):
     
-    final_tab_list: List[Tuple[str, str]] = inference(midi_file_path)
+    final_tab_list: List[Tuple[str, str]] = inference(midi_file_path, capo=capo, tuning=tuning)
 
-    print("TAB",final_tab_list)
+    # print("TAB",sorted(final_tab_list, key=lamda t:t.onset_sec)
     
     if final_tab_list is None:
         print("Pipeline failed to generate tabs.")
         return
+    
+    print("TAB", final_tab_list)
     
     return final_tab_list
 
@@ -270,15 +315,27 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Generate guitar tablature for audio.")
     parser.add_argument("--audio_path", type=str, required=True, help="Path to the audio file")
+    parser.add_argument("--capo", type=int, default=0, help="Capo")
+    parser.add_argument("--tuning", type=str, default=STANDARD_TUNING, help="Tuning from high to low, string separated by a space")
+    parser.add_argument("--tempo", default=None, help="Tempo in BPM")
     args = parser.parse_args()
     AUDIO_PATH = args.audio_path
+    CAPO = args.capo
+    TUNING = tuning_conversion(args.tuning)
+    BPM = args.tempo
+
+    #----------------------------------------------------------------------------------#
+
+    print("Running our pipeline on:", AUDIO_PATH)
     MUSIC_TO_MIDI_PATH = "/data/akshaj/MusicAI/workspace/checkpoints/log_0332/gaps_goat_guitartechs_leduc_limited_regress_onset_offset_frame_velocity_bce_log332_iter2000_lr1e-05_bs4.pth"
     MIDI_INFERENCE_SCRIPT = "/data/akshaj/MusicAI/Stage1/pytorch/inference.py"
-    MIN_AUDIO_SLICE_DURATION = 0.2 # This is set as minimal comprehensible input to Peter's model
+    MIN_AUDIO_SLICE_DURATION = 0.2 # This is set as minimal comprehensible input to Peter's model. if you change thiis you must also change in postprocess.py
     
     #----------------------------------------------------------------------------------#
     
-    bpm = estimate_bpm(AUDIO_PATH)
+    bpm = BPM
+    if not BPM:
+        bpm = estimate_bpm(AUDIO_PATH)
     midi_path = run_akshaj_model(AUDIO_PATH, MUSIC_TO_MIDI_PATH, MIDI_INFERENCE_SCRIPT)
     midi_dict = find_single_note_onsets(midi_path)
 
@@ -286,6 +343,7 @@ if __name__ == "__main__":
 
     midi_dict_peter = [event for event in midi_dict if event['duration_seconds'] >= MIN_AUDIO_SLICE_DURATION] # for peter's model
     # Note: the below function has several path variables you may need to change
+    print("PETER", midi_dict_peter)
     exp_onset_dur_tuples = run_peter_model_on_chunks(*audio_midi_to_chunks(AUDIO_PATH, midi_dict_peter))
     print(exp_onset_dur_tuples)
     # exp_onset_dur_tuples = cache.cached_peter_result(AUDIO_PATH, midi_dict_peter, force_rerun=False) ## for TESTING
@@ -293,11 +351,20 @@ if __name__ == "__main__":
     #----------------------------------------------------------------------------------#
 
     tab_inference, post_process_tab = andrea_inference_script.run_tab_generation, calculate_onsets
-    tab_list = post_process_tab(run_andreas_model(midi_path, tab_inference))
+    tab_list = post_process_tab(run_andreas_model(midi_path, tab_inference, capo=CAPO, tuning=TUNING))
 
     #----------------------------------------------------------------------------------#
 
-    output_name, matching_mode = os.path.splitext(os.path.basename(midi_path))[0], "time_matching"
-    tab_path = technique_tabs_final.conversion_andreas(midi_path, exp_onset_dur_tuples, tab_list, f"{output_name}_colin.xml", bpm, mode=matching_mode)
+    ### CREATE JAMS FILE
+    tuning_dict = {i + 1: pitch for i, pitch in enumerate(TUNING)}
+    jam = preprocess.midi_to_jams_with_tablature_from_andreas(midi_path, tab_list, bpm=bpm, tuning=tuning_dict, capo = CAPO)
+    jam = preprocess.add_exp_techniques_to_existing_jam(jam, exp_onset_dur_tuples)
+    output_name = f"{os.path.splitext(os.path.basename(midi_path))[0]}.xml"
+    output_musicxml = f"{os.path.splitext(os.path.basename(midi_path))[0]}.musicxml"
+    jams_path = j.save_jam(jam, output_name)
+
+    #----------------------------------------------------------------------------------#
+
+    ### FINAL TAB GENERATION 
     
-    print(tab_path)
+    tab_generator_final(jams_path, output_musicxml)
