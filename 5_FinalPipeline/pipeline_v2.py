@@ -10,7 +10,6 @@ import json
 from typing import List, Tuple
 import numpy as np
 import andrea_inference_script
-import technique_tabs_final_new as tab_generator
 import pipeline_utils.technique_cacher as cache
 import tab_generation_utils.postprocess_v2 as postprocess
 import tab_generation_utils.preprocess as preprocess
@@ -367,4 +366,4 @@ if __name__ == "__main__":
 
     ### FINAL TAB GENERATION 
     
-    tab_generator_final(jams_path, output_musicxml)
+    tab_generator_final(jams_path, output_musicxml, bpm = bpm)

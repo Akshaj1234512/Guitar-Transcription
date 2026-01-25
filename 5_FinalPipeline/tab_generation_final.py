@@ -358,9 +358,9 @@ def jams_to_musicxml_tab_musescore_clean(
     etree.ElementTree(score).write(output_xml, pretty_print=True, xml_declaration=True, encoding="UTF-8")
     print(f"✓ Wrote {output_xml} (1/16 snapped, collisions dropped, MuseScore-friendly strings).")
 
-def main(jam_path, output_name = "final_tab.musicxml"):
+def main(jam_path, output_name = "final_tab.musicxml", bpm = 120):
     jams_file = jam_path
-    jams_to_musicxml_tab_musescore_clean(jams_file, output_xml=output_name, tempo_bpm=97)
+    jams_to_musicxml_tab_musescore_clean(jams_file, output_xml=output_name, tempo_bpm=bpm)
 
 # ----------------------------
 # RUN
