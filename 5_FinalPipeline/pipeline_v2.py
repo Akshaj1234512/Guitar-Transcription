@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 from typing import List, Tuple
 import numpy as np
-import andrea_inference_script
+import fretting_inference_script
 import pipeline_utils.technique_cacher as cache
 import tab_generation_utils.postprocess_v2 as postprocess
 import tab_generation_utils.preprocess as preprocess
@@ -349,7 +349,7 @@ if __name__ == "__main__":
 
     #----------------------------------------------------------------------------------#
 
-    tab_inference, post_process_tab = andrea_inference_script.run_tab_generation, calculate_onsets
+    tab_inference, post_process_tab = fretting_inference_script.run_tab_generation, calculate_onsets
     tab_list = post_process_tab(run_andreas_model(midi_path, tab_inference, capo=CAPO, tuning=TUNING))
 
     #----------------------------------------------------------------------------------#

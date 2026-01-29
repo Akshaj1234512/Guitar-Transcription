@@ -1,0 +1,9 @@
+# Minimal dependencies for running training/evaluation/inference
+# Adjust versions if you target a specific TensorFlow build (GPU vs CPU).
+tensorflow>=2.12
+numpy>=1.25
+librosa>=0.9
+scikit-learn>=1.4
+soundfile>=0.12
+# Optional helpers used by auxiliary scripts
+openl3>=0.9
