@@ -12,7 +12,8 @@ DIVISIONS = 480               # per quarter note
 GRID_DENOM = 16               # snap to 1/16 notes
 GRID_TICKS = int(DIVISIONS * (4 / GRID_DENOM))  # ticks per 1/16
 
-PAIR_WINDOW_S = 0.6
+# CHANGE: use beat-based window instead of seconds (consistent across BPMs)
+PAIR_WINDOW_BEATS = 1.0       # 1 beat = quarter note at tempo_bpm
 
 # MuseScore TAB: staff-tuning line=1 is LOWEST string (E2).
 STAFF_TUNING_LINE_1_TO_6_LOW_TO_HIGH = [
@@ -26,6 +27,10 @@ JAMS_IS_1_HIGH = False
 # ----------------------------
 # Helpers
 # ----------------------------
+def beats_to_seconds(beats: float, tempo_bpm: float) -> float:
+    # 1 beat = a quarter note at tempo_bpm
+    return float(beats) * (60.0 / float(tempo_bpm))
+
 def midi_pitch_to_step_alter_oct(midi_pitch: int):
     steps = ['C','C','D','D','E','F','F','G','G','A','A','B']
     alters = [0,1,0,1,0,0,1,0,1,0,1,0]
@@ -143,21 +148,30 @@ def add_tab_staff_details(attrs_elem):
 # ----------------------------
 # Pair spanners: LEGATO + SLIDE
 # ----------------------------
-def build_pairs(tab_data, max_dt=0.6, max_fret_jump=7):
+def build_pairs(tab_data, tempo_bpm, max_dt_beats=1.0, max_fret_jump=7):
+    """
+    CHANGE: pairing window is in beats (quarter notes). We convert beats->seconds using tempo_bpm
+    so the same musical window behaves consistently across BPMs.
+    """
+    max_dt = beats_to_seconds(max_dt_beats, tempo_bpm)
+
     by_string = defaultdict(list)
     for i, obs in enumerate(tab_data):
         by_string[int(obs.value["string"])].append(i)
+
+    # IMPORTANT: ensure indices are time-ordered within each string
+    for s in by_string:
+        by_string[s].sort(key=lambda idx: float(tab_data[idx].time))
 
     pairs = {}
     for s, idxs in by_string.items():
         for a, b in zip(idxs, idxs[1:]):
             oa, ob = tab_data[a], tab_data[b]
             dt = float(ob.time) - float(oa.time)
-            if dt > max_dt:
+            if dt <= 0 or dt > max_dt:
                 continue
 
             techs = set(normalize_techs(oa.value))
-            # ignore percussive / non-melodic tags for spanners
             techs.discard("palm_muting")
             techs.discard("snare_drum")
 
@@ -166,9 +180,20 @@ def build_pairs(tab_data, max_dt=0.6, max_fret_jump=7):
 
             fa = oa.value.get("fret", None)
             fb = ob.value.get("fret", None)
-            if fa is not None and fb is not None:
-                if abs(int(fb) - int(fa)) > max_fret_jump:
-                    continue
+            if fa is None or fb is None:
+                continue
+
+            fa = int(fa); fb = int(fb)
+
+            # HARD GUARDS:
+            # 1) Same string is already guaranteed by grouping
+            # 2) Must actually change fret (no 0->0, 2->2)
+            if fa == fb:
+                continue
+
+            # 3) avoid insane jumps
+            if abs(fb - fa) > max_fret_jump:
+                continue
 
             if ("hammer_on_pull_off" in techs) or ("hopo" in techs) or ("hammer" in techs) or ("pull" in techs):
                 pairs.setdefault(a, {})["legato"] = b
@@ -179,6 +204,7 @@ def build_pairs(tab_data, max_dt=0.6, max_fret_jump=7):
     return pairs
 
 
+
 # ----------------------------
 # Main writer
 # ----------------------------
@@ -186,7 +212,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
     jams_path,
     output_xml="final_standard_plus_tab.musicxml",
     tempo_bpm=120,
-    pair_window_s=PAIR_WINDOW_S,
+    pair_window_beats=PAIR_WINDOW_BEATS,   # CHANGE: beats, not seconds
 ):
     jam = jams.load(jams_path, validate=False)
     tab_ann = next((a for a in jam.annotations if a.namespace == "tab_note"), None)
@@ -197,7 +223,8 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
     if not tab_data:
         raise ValueError("tab_note annotation is empty.")
 
-    pairs = build_pairs(tab_data, max_dt=pair_window_s)
+    # CHANGE: build_pairs now takes tempo_bpm + beat window
+    pairs = build_pairs(tab_data, tempo_bpm, max_dt_beats=pair_window_beats)
     start_map = cluster_onsets(tab_data, tempo_bpm, cluster_ms=30.0)
 
     # Build events (single unified timeline)
@@ -225,6 +252,8 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
             fret=fret,
             techs=techs
         ))
+
+    jidx_to_start = {ev["j_idx"]: ev["start"] for ev in events}
 
     # Collision removal (same start,string): keep longer dur
     best = {}
@@ -280,7 +309,6 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
     # keep playback tempo too
     etree.SubElement(direction, "sound", tempo=str(tempo_bpm))
 
-
     attrs_tab = etree.SubElement(cur_meas_tab, "attributes")
     add_time_and_divisions(attrs_tab)
     add_tab_staff_details(attrs_tab)
@@ -288,6 +316,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
 
     # For spanners we only want TAB note elements (MuseScore interprets those well)
     jams_to_note_elem_tab = {}
+    note_meta = {}  # j_idx -> (xml_string, fret) for spanner validation
 
     def goto_measure_for_tick(global_tick: int):
         nonlocal cur_measure_no, cur_meas_std, cur_meas_tab
@@ -437,6 +466,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
                 words.text = "bend"
 
             jams_to_note_elem_tab[ev["j_idx"]] = note
+            note_meta[ev["j_idx"]] = (ev["xml_string"], ev["fret"])
 
         # Advance time to next onset (so rests can exist)
         if max_hold is not None:
@@ -445,48 +475,132 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
             cur_global += max(e["dur"] for e in chord_events)
 
     # ----------------------------
-    # Spanners on TAB part only
+    # Spanners on TAB part only (MuseScore-stable: no overlaps share numbers)
     # ----------------------------
+    def allocate_numbers_for_intervals(intervals, max_pool=16):
+        """
+        intervals: list of dicts with keys: s_t, e_t, start_j, stop_j
+        Returns: list of (start_j, stop_j, num) with num assigned so overlapping intervals never share num.
+        """
+        intervals = sorted(intervals, key=lambda x: (x["s_t"], x["e_t"]))
+
+        active = []  # list of (end_t, num)
+        free_nums = list(range(1, max_pool + 1))
+        out = []
+
+        for it in intervals:
+            s_t, e_t = it["s_t"], it["e_t"]
+
+            still_active = []
+            for end_t, num in active:
+                if end_t <= s_t:
+                    free_nums.append(num)
+                else:
+                    still_active.append((end_t, num))
+            active = still_active
+            free_nums.sort()
+
+            if not free_nums:
+                max_pool += 8
+                free_nums.extend(range(len(set(n for _, n in active)) + 1, max_pool + 1))
+                free_nums.sort()
+
+            num = free_nums.pop(0)
+            active.append((e_t, num))
+            out.append((it["start_j"], it["stop_j"], str(num)))
+
+        return out
+
+    # Build legato/slide intervals from pairs (with strict guards)
+    legato_intervals = []
+    slide_intervals = []
+
     for start_j, d in pairs.items():
-        start_note = jams_to_note_elem_tab.get(start_j)
-        if start_note is None:
+        s_note = jams_to_note_elem_tab.get(start_j)
+        s_meta = note_meta.get(start_j)
+        s_t = jidx_to_start.get(start_j)
+
+        if (s_note is None) or (s_meta is None) or (s_t is None):
             continue
+        s_string, s_fret = s_meta
 
+        # LEGATO interval candidate
         if "legato" in d:
-            stop_note = jams_to_note_elem_tab.get(d["legato"])
-            if stop_note is not None:
-                sN = ensure_notations(start_note)
-                eN = ensure_notations(stop_note)
-                etree.SubElement(sN, "slur", type="start", number="1")
-                etree.SubElement(eN, "slur", type="stop", number="1")
+            stop_j = d["legato"]
+            e_note = jams_to_note_elem_tab.get(stop_j)
+            e_meta = note_meta.get(stop_j)
+            e_t = jidx_to_start.get(stop_j)
 
+            if (e_note is not None) and (e_meta is not None) and (e_t is not None) and (e_t > s_t):
+                e_string, e_fret = e_meta
+                if (s_string == e_string) and (int(s_fret) != int(e_fret)):
+                    legato_intervals.append({"s_t": s_t, "e_t": e_t, "start_j": start_j, "stop_j": stop_j})
+
+        # SLIDE interval candidate
         if "slide" in d:
-            stop_note = jams_to_note_elem_tab.get(d["slide"])
-            if stop_note is not None:
-                sN = ensure_notations(start_note)
-                eN = ensure_notations(stop_note)
-                g1 = etree.SubElement(sN, "glissando", attrib={
-                    "type": "start",
-                    "number": "1",
-                    "line-type": "solid",
-                })
-                g1.text = "/"
-                etree.SubElement(eN, "glissando", attrib={
-                    "type": "stop",
-                    "number": "1",
-                    "line-type": "solid",
-                })
+            stop_j = d["slide"]
+            e_note = jams_to_note_elem_tab.get(stop_j)
+            e_meta = note_meta.get(stop_j)
+            e_t = jidx_to_start.get(stop_j)
+
+            if (e_note is not None) and (e_meta is not None) and (e_t is not None) and (e_t > s_t):
+                e_string, e_fret = e_meta
+                if (s_string == e_string) and (int(s_fret) != int(e_fret)):
+                    slide_intervals.append({"s_t": s_t, "e_t": e_t, "start_j": start_j, "stop_j": stop_j})
+
+    # Allocate numbers so overlaps never share the same one
+    legato_assigned = allocate_numbers_for_intervals(legato_intervals, max_pool=16)
+    slide_assigned  = allocate_numbers_for_intervals(slide_intervals,  max_pool=16)
+
+    # Emit LEGATO
+    for start_j, stop_j, num in legato_assigned:
+        start_note = jams_to_note_elem_tab.get(start_j)
+        stop_note  = jams_to_note_elem_tab.get(stop_j)
+        if start_note is None or stop_note is None:
+            continue
+        sN = ensure_notations(start_note)
+        eN = ensure_notations(stop_note)
+        etree.SubElement(sN, "slur", type="start", number=num)
+        etree.SubElement(eN, "slur", type="stop",  number=num)
+
+    # Emit SLIDE
+    for start_j, stop_j, num in slide_assigned:
+        start_note = jams_to_note_elem_tab.get(start_j)
+        stop_note  = jams_to_note_elem_tab.get(stop_j)
+        if start_note is None or stop_note is None:
+            continue
+        sN = ensure_notations(start_note)
+        eN = ensure_notations(stop_note)
+        g1 = etree.SubElement(sN, "glissando", attrib={
+            "type": "start",
+            "number": num,
+            "line-type": "solid",
+        })
+        g1.text = "/"
+        etree.SubElement(eN, "glissando", attrib={
+            "type": "stop",
+            "number": num,
+            "line-type": "solid",
+        })
 
     etree.ElementTree(score).write(output_xml, pretty_print=True, xml_declaration=True, encoding="UTF-8")
     print(f"✓ Wrote {output_xml} (TWO PARTS: standard+TAB; TAB preserved, no re-fingering).")
 
+
 def main(jam_path, output_name = "final_tab.musicxml", bpm=120):
     jams_file = jam_path
-    jams_to_musicxml_standard_plus_tab_TWO_PARTS(jams_file, output_xml=output_name, tempo_bpm=bpm)
+    jams_to_musicxml_standard_plus_tab_TWO_PARTS(jams_file, output_xml=output_name, tempo_bpm=bpm, pair_window_beats=1.0)
+
 
 # ----------------------------
 # RUN
 # ----------------------------
-# if __name__ == "__main__":
-#     jams_file = "/data/akshaj/MusicAI/Music-AI/4_Tabs/Testing/Dua Lipa - IDGAF - Cover (Fingerstyle Guitar)_colin.jams"
-#     jams_to_musicxml_tab_musescore_clean(jams_file, output_xml="final_tab.musicxml", tempo_bpm=97)
+if __name__ == "__main__":
+    jams_file = "/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/Dua Lipa - IDGAF - Cover (Fingerstyle Guitar).jams"
+    jams_to_musicxml_standard_plus_tab_TWO_PARTS(
+        jams_file,
+        output_xml="final_standard_plus_tab.musicxml",
+        tempo_bpm=97,
+        pair_window_beats=1.0,   # 1-beat legato/slide pairing window
+    )
+
