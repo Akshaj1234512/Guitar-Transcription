@@ -1,5 +1,28 @@
 # Music AI
 
+Setup Instructions:
+
+It is recommended to use a virtual environment. 
+
+```
+cd ~/Music-AI/
+python3 -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# Install all dependencies from the requirements file
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Then, download the models as below.
+```
+cd ~/Music-AI/models
+hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi
+hf download shamakg/string-fret-guitar --local-dir string-fret
+hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar
+```
+
+
 ### Project Description
 
 A next-generation music platform focused on guitar, combining AI-powered tools for transcription, learning, composition, and music generation. The platform aims to deliver:
