@@ -1,6 +1,6 @@
 # Music AI
 
-Setup Instructions:
+**Setup Instructions:**
 
 It is recommended to use a virtual environment. 
 
