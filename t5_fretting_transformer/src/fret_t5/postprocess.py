@@ -1,0 +1,1248 @@
+"""
+Post-processing for tablature predictions.
+
+This module implements the post-processing algorithm described in section 3.5:
+- Corrects pitch errors by matching to nearest valid fingering within ±N MIDI notes
+- Corrects time shift discrepancies to match input
+- Uses fret_stretch metric to select best alternative fingering
+
+Additionally provides timing reconstruction functionality for audio-to-tab pipelines:
+- Preserves original continuous timing from MIDI input through quantized model inference
+- Reconstructs absolute timestamps for tab events during postprocessing
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional, Dict, Sequence
+
+
+# ---------------------------------------------------------------------------
+# Timing Context for preserving original MIDI timing through inference
+# ---------------------------------------------------------------------------
+
+@dataclass
+class NoteTimingInfo:
+    """Original timing information for a single note from MIDI input.
+    
+    Attributes:
+        onset_sec: Original onset time in seconds from MIDI
+        duration_sec: Original duration in seconds from MIDI  
+        pitch: MIDI pitch (for alignment verification)
+        quantized_duration_ms: The quantized TIME_SHIFT value used in tokens
+    """
+    onset_sec: float
+    duration_sec: float
+    pitch: int
+    quantized_duration_ms: int = 0
+
+
+@dataclass 
+class TimingContext:
+    """Carries original MIDI timing through the inference pipeline.
+    
+    This allows postprocessing to reconstruct continuous timestamps
+    after the model generates quantized TIME_SHIFT tokens.
+    
+    Attributes:
+        note_timings: List of NoteTimingInfo, one per input note in sequence order
+        time_shift_quantum_ms: The quantization step used (default 100ms)
+    """
+    note_timings: List[NoteTimingInfo] = field(default_factory=list)
+    time_shift_quantum_ms: int = 100
+    
+    def __len__(self) -> int:
+        return len(self.note_timings)
+    
+    def add_note(
+        self, 
+        onset_sec: float, 
+        duration_sec: float, 
+        pitch: int,
+        quantized_duration_ms: int = 0
+    ) -> None:
+        """Add a note's timing information."""
+        self.note_timings.append(NoteTimingInfo(
+            onset_sec=onset_sec,
+            duration_sec=duration_sec,
+            pitch=pitch,
+            quantized_duration_ms=quantized_duration_ms
+        ))
+
+
+@dataclass
+class TabEvent:
+    """A single tablature event with continuous timing.
+    
+    Attributes:
+        string: Guitar string number (1-6, where 1 is high E)
+        fret: Fret number (0-24)
+        onset_sec: Onset time in seconds (from original MIDI)
+        duration_sec: Duration in seconds (from original MIDI)
+        midi_pitch: The MIDI pitch this tab position produces
+    """
+    string: int
+    fret: int
+    onset_sec: float
+    duration_sec: float
+    midi_pitch: int = 0
+
+# Standard tuning (string 1 to string 6)
+STANDARD_TUNING = (64, 59, 55, 50, 45, 40)
+
+
+def tuning_to_open_strings(tuning: Tuple[int, ...]) -> Dict[int, int]:
+    """Convert tuning tuple to open strings dictionary mapping string number to MIDI pitch."""
+    return {i + 1: pitch for i, pitch in enumerate(tuning)}
+
+
+def tab_to_midi_pitch(
+    string: int,
+    fret: int,
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING
+) -> int:
+    """
+    Convert guitar tablature to MIDI pitch.
+
+    Args:
+        string: String number (1-6, where 1 is high E)
+        fret: Fret number (0-24)
+        capo: Capo position (0-7)
+        tuning: Tuple of 6 open string pitches
+
+    Returns:
+        MIDI pitch value
+    """
+    open_strings = tuning_to_open_strings(tuning)
+    return open_strings[string] + fret + capo
+
+
+def fret_stretch(p_fret: int, q_fret: int) -> float:
+    """
+    Calculate fret stretch difficulty between two fret positions.
+
+    Moving up the fretboard (positive delta) is easier (0.50x weight),
+    moving down (negative delta) is harder (0.75x weight).
+
+    Args:
+        p_fret: Starting fret position
+        q_fret: Ending fret position
+
+    Returns:
+        Fret stretch difficulty score
+    """
+    delta_fret = q_fret - p_fret
+    if delta_fret > 0:
+        return 0.50 * abs(delta_fret)
+    else:
+        return 0.75 * abs(delta_fret)
+
+
+def find_alternative_fingerings(
+    midi_pitch: int,
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING
+) -> List[Tuple[int, int]]:
+    """
+    Find all valid (string, fret) combinations for a given MIDI pitch.
+
+    Args:
+        midi_pitch: Target MIDI pitch
+        capo: Capo position (0-7)
+        tuning: Tuple of 6 open string pitches
+
+    Returns:
+        List of (string, fret) tuples that produce the target pitch
+    """
+    alternatives = []
+    open_strings = tuning_to_open_strings(tuning)
+
+    for string in range(1, 7):
+        open_pitch = open_strings[string]
+        fret = midi_pitch - open_pitch - capo
+
+        if 0 <= fret <= 24:
+            alternatives.append((string, fret))
+
+    return alternatives
+
+
+def select_best_fingering(
+    alternatives: List[Tuple[int, int]],
+    predicted_string: int,
+    predicted_fret: int
+) -> Tuple[int, int]:
+    """
+    Select the best alternative fingering using fret_stretch metric.
+
+    Chooses the fingering that minimizes fret stretch distance from
+    the model's predicted fingering.
+
+    Args:
+        alternatives: List of valid (string, fret) combinations
+        predicted_string: Model's predicted string
+        predicted_fret: Model's predicted fret
+
+    Returns:
+        (string, fret) tuple with minimal fret stretch distance
+    """
+    if not alternatives:
+        return (predicted_string, predicted_fret)
+
+    if len(alternatives) == 1:
+        return alternatives[0]
+
+    # Calculate fret_stretch distance for each alternative
+    best_fingering = alternatives[0]
+    min_distance = fret_stretch(predicted_fret, alternatives[0][1])
+
+    for string, fret in alternatives[1:]:
+        distance = fret_stretch(predicted_fret, fret)
+        if distance < min_distance:
+            min_distance = distance
+            best_fingering = (string, fret)
+
+    return best_fingering
+
+
+# ---------------------------------------------------------------------------
+# Fret Span Constraint for Playable Chords
+# ---------------------------------------------------------------------------
+
+def calculate_fret_span(frets: List[int]) -> int:
+    """Calculate fret span excluding open strings (fret 0).
+
+    Open strings don't require finger placement, so they are excluded from
+    the span calculation. A chord like [0, 5, 7] has an effective span of 2,
+    not 7.
+
+    Args:
+        frets: List of fret numbers in the chord
+
+    Returns:
+        Max - min of non-zero frets, or 0 if <= 1 fretted note
+    """
+    non_zero = [f for f in frets if f > 0]
+    if len(non_zero) <= 1:
+        return 0
+    return max(non_zero) - min(non_zero)
+
+
+def is_chord_playable(chord_positions: List[Tuple[int, int]], max_span: int = 5) -> bool:
+    """Check if a chord shape is physically playable.
+
+    A chord is considered playable if:
+    1. The fret span (excluding open strings) is within the maximum span
+    2. No two notes use the same string (physically impossible)
+
+    Args:
+        chord_positions: List of (string, fret) tuples
+        max_span: Maximum allowed fret span (default 5)
+
+    Returns:
+        True if playable (span <= max_span AND no duplicate strings)
+    """
+    # Check for duplicate strings
+    strings = [string for string, _ in chord_positions]
+    if len(strings) != len(set(strings)):
+        return False
+
+    # Check fret span
+    frets = [fret for _, fret in chord_positions]
+    return calculate_fret_span(frets) <= max_span
+
+
+def group_tokens_into_chords(decoder_tokens: List[str]) -> List[List[int]]:
+    """Group TAB token indices into chords based on TIME_SHIFT<0>.
+
+    Chords are consecutive TAB tokens separated by TIME_SHIFT<0>.
+    A TIME_SHIFT>0 ends the current chord.
+
+    Args:
+        decoder_tokens: List of decoder tokens (TAB and TIME_SHIFT pairs)
+
+    Returns:
+        List of lists, each containing indices of TAB tokens in same chord.
+        The indices refer to positions in the output of extract_output_tabs().
+    """
+    chords: List[List[int]] = []
+    current_chord: List[int] = []
+    tab_index = 0
+
+    i = 0
+    while i < len(decoder_tokens):
+        token = decoder_tokens[i]
+
+        if token.startswith('TAB<'):
+            current_chord.append(tab_index)
+            tab_index += 1
+
+            # Check next token for TIME_SHIFT
+            if i + 1 < len(decoder_tokens):
+                next_token = decoder_tokens[i + 1]
+                if next_token.startswith('TIME_SHIFT<'):
+                    time_shift = parse_time_shift_token(next_token)
+                    if time_shift is not None and time_shift > 0:
+                        # Non-zero TIME_SHIFT ends current chord
+                        if current_chord:
+                            chords.append(current_chord)
+                            current_chord = []
+            i += 2  # Skip TAB and TIME_SHIFT
+        else:
+            i += 1
+
+    # Add final chord if any
+    if current_chord:
+        chords.append(current_chord)
+
+    return chords
+
+
+def refinger_chord_for_playability(
+    chord_positions: List[Tuple[int, int]],
+    midi_pitches: List[int],
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING,
+    max_span: int = 5
+) -> List[Tuple[int, int]]:
+    """Find the most playable fingering for a chord.
+
+    Two-pass global span minimization algorithm:
+    - Priority 1: Satisfy span <= max_span (strict mode)
+    - Priority 2: Minimize span (best effort) if strict constraint is impossible
+    - NEVER removes notes - all pitches are preserved
+
+    Args:
+        chord_positions: List of (string, fret) tuples for current chord
+        midi_pitches: List of MIDI pitches corresponding to each position
+        capo: Capo position (0-7)
+        tuning: Tuple of 6 open string pitches
+        max_span: Maximum allowed fret span (default 5)
+
+    Returns:
+        List of (string, fret) tuples with minimum achievable fret span
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # 1. Quick check: Is original already valid?
+    if is_chord_playable(chord_positions, max_span):
+        return chord_positions
+
+    if len(chord_positions) != len(midi_pitches):
+        logger.warning("Mismatch between positions and pitches, returning original")
+        return chord_positions
+
+    # 2. Prepare alternatives (sorted by proximity to original)
+    all_alternatives: List[List[Tuple[int, int]]] = []
+    for pitch, (_, orig_fret) in zip(midi_pitches, chord_positions):
+        alternatives = find_alternative_fingerings(pitch, capo, tuning)
+        if not alternatives:
+            # No valid fingering exists for this pitch
+            logger.warning(f"No valid fingering for pitch {pitch}, returning original")
+            return chord_positions
+        # Sort by proximity to original fret position
+        alternatives.sort(key=lambda x: abs(x[1] - orig_fret))
+        all_alternatives.append(alternatives)
+
+    # 3. State for global minimum search
+    best_solution: Optional[List[Tuple[int, int]]] = None
+    min_span_found = float('inf')
+
+    def backtrack(
+        idx: int,
+        current_solution: List[Tuple[int, int]],
+        used_strings: set,
+        current_min: int,
+        current_max: int,
+        strict_mode: bool
+    ) -> bool:
+        """Recursively search for valid chord fingering.
+
+        Args:
+            idx: Current note index
+            current_solution: Partial solution being built
+            used_strings: Set of strings already used
+            current_min: Minimum fret in current solution (for fretted notes)
+            current_max: Maximum fret in current solution (for fretted notes)
+            strict_mode: If True, only accept solutions with span <= max_span
+
+        Returns:
+            True if a valid solution was found (in strict mode), False otherwise
+        """
+        nonlocal best_solution, min_span_found
+
+        # Pruning based on current span
+        if current_max > -1:
+            local_span = current_max - current_min
+            if strict_mode and local_span > max_span:
+                return False
+            if not strict_mode and local_span >= min_span_found:
+                return False
+
+        if idx == len(all_alternatives):
+            # Complete solution found
+            span = calculate_fret_span([f for _, f in current_solution])
+            if span < min_span_found:
+                min_span_found = span
+                best_solution = list(current_solution)
+            return strict_mode and span <= max_span
+
+        for string, fret in all_alternatives[idx]:
+            if string in used_strings:
+                continue
+
+            # Update min/max for fretted notes only (open strings don't count)
+            new_min, new_max = current_min, current_max
+            if fret > 0:
+                if current_max == -1:
+                    new_min = new_max = fret
+                else:
+                    new_min, new_max = min(current_min, fret), max(current_max, fret)
+
+            used_strings.add(string)
+            if backtrack(idx + 1, current_solution + [(string, fret)],
+                        used_strings, new_min, new_max, strict_mode):
+                used_strings.remove(string)
+                return True
+            used_strings.remove(string)
+
+        return False
+
+    # Pass 1: Strict search - find solution with span <= max_span
+    if backtrack(0, [], set(), -1, -1, strict_mode=True) and best_solution:
+        return best_solution
+
+    # Pass 2: Best-effort optimization - find minimum possible span
+    logger.info(f"No strict solution for {midi_pitches}, optimizing for min span")
+    best_solution = None
+    min_span_found = float('inf')
+    backtrack(0, [], set(), -1, -1, strict_mode=False)
+
+    if best_solution:
+        logger.info(f"Found best-effort solution with span {min_span_found}")
+        return best_solution
+
+    # Only fails if notes can't be placed on distinct strings
+    logger.warning("Cannot combine notes on distinct strings, returning original")
+    return chord_positions
+
+
+def parse_tab_token(tab_token: str) -> Optional[Tuple[int, int]]:
+    """Parse TAB<string,fret> token to (string, fret) tuple."""
+    try:
+        content = tab_token[4:-1]  # Remove "TAB<" and ">"
+        parts = content.split(',')
+        if len(parts) == 2:
+            return (int(parts[0]), int(parts[1]))
+    except ValueError:
+        return None
+    return None
+
+
+def parse_time_shift_token(time_shift_token: str) -> Optional[int]:
+    """Parse TIME_SHIFT<ms> token to integer milliseconds."""
+    try:
+        content = time_shift_token[11:-1]  # Remove "TIME_SHIFT<" and ">"
+        return int(content)
+    except ValueError:
+        return None
+    return None
+
+
+def parse_note_on_token(note_on_token: str) -> Optional[int]:
+    """Parse NOTE_ON<pitch> token to integer MIDI pitch."""
+    try:
+        content = note_on_token[8:-1]  # Remove "NOTE_ON<" and ">"
+        return int(content)
+    except ValueError:
+        return None
+    return None
+
+
+def parse_capo_token(capo_token: str) -> Optional[int]:
+    """Parse CAPO<n> token to integer."""
+    try:
+        content = capo_token[5:-1]  # Remove "CAPO<" and ">"
+        return int(content)
+    except ValueError:
+        return None
+    return None
+
+
+def parse_tuning_token(tuning_token: str) -> Optional[Tuple[int, ...]]:
+    """Parse TUNING<p1,p2,p3,p4,p5,p6> token to tuple of pitches."""
+    try:
+        content = tuning_token[7:-1]  # Remove "TUNING<" and ">"
+        pitches = tuple(int(p) for p in content.split(','))
+        if len(pitches) == 6:
+            return pitches
+    except ValueError:
+        return None
+    return None
+
+
+def extract_input_notes(encoder_tokens: List[str]) -> List[Tuple[int, int]]:
+    """
+    Extract (midi_pitch, time_shift) pairs from encoder tokens.
+
+    Args:
+        encoder_tokens: List of encoder tokens including NOTE_ON, TIME_SHIFT, NOTE_OFF
+
+    Returns:
+        List of (midi_pitch, time_shift_ms) tuples
+    """
+    notes = []
+    i = 0
+
+    # Skip conditioning tokens (CAPO and TUNING)
+    while i < len(encoder_tokens):
+        token = encoder_tokens[i]
+        if token.startswith('CAPO<') or token.startswith('TUNING<'):
+            i += 1
+            continue
+        break
+
+    # Parse NOTE_ON, TIME_SHIFT, NOTE_OFF triplets
+    while i < len(encoder_tokens) - 2:
+        if encoder_tokens[i].startswith('NOTE_ON<'):
+            pitch = parse_note_on_token(encoder_tokens[i])
+            time_shift = parse_time_shift_token(encoder_tokens[i + 1])
+
+            if pitch is not None and time_shift is not None:
+                notes.append((pitch, time_shift))
+
+            i += 3  # Skip NOTE_ON, TIME_SHIFT, NOTE_OFF
+        else:
+            i += 1
+
+    return notes
+
+
+def extract_output_tabs(decoder_tokens: List[str]) -> List[Tuple[int, int, int]]:
+    """
+    Extract (string, fret, time_shift) tuples from decoder tokens.
+
+    Args:
+        decoder_tokens: List of decoder tokens (TAB and TIME_SHIFT pairs)
+
+    Returns:
+        List of (string, fret, time_shift_ms) tuples
+    """
+    tabs = []
+    i = 0
+
+    while i < len(decoder_tokens) - 1:
+        if decoder_tokens[i].startswith('TAB<'):
+            tab = parse_tab_token(decoder_tokens[i])
+            time_shift = parse_time_shift_token(decoder_tokens[i + 1])
+
+            if tab is not None and time_shift is not None:
+                string, fret = tab
+                tabs.append((string, fret, time_shift))
+
+            i += 2  # Skip TAB and TIME_SHIFT
+        else:
+            i += 1
+
+    return tabs
+
+
+def align_sequences_with_window(
+    input_notes: List[Tuple[int, int]],
+    output_tabs: List[Tuple[int, int, int]],
+    window_size: int = 5
+) -> List[Tuple[Optional[int], int]]:
+    """
+    Align input notes to output tabs using a sliding window.
+
+    For each output position, finds the best matching input within ±window_size positions.
+
+    Args:
+        input_notes: List of (midi_pitch, time_shift) tuples
+        output_tabs: List of (string, fret, time_shift) tuples
+        window_size: Maximum position difference for matching
+
+    Returns:
+        List of (input_idx, output_idx) pairs. input_idx may be None for unmatched outputs,
+        but output_idx is always a valid index.
+    """
+    # Simple 1-to-1 alignment when lengths match
+    if len(input_notes) == len(output_tabs):
+        return [(i, i) for i in range(len(input_notes))]
+
+    # For length mismatches, use greedy nearest-neighbor alignment
+    alignments = []
+    used_inputs = set()
+
+    for out_idx in range(len(output_tabs)):
+        best_input_idx = None
+        best_score = float('inf')
+
+        # Search within window
+        search_start = max(0, out_idx - window_size)
+        search_end = min(len(input_notes), out_idx + window_size + 1)
+
+        for in_idx in range(search_start, search_end):
+            if in_idx in used_inputs:
+                continue
+
+            # Score = position difference (prefer nearby positions)
+            score = abs(in_idx - out_idx)
+
+            if score < best_score:
+                best_score = score
+                best_input_idx = in_idx
+
+        if best_input_idx is not None:
+            alignments.append((best_input_idx, out_idx))
+            used_inputs.add(best_input_idx)
+        else:
+            # No match found, output will be left as-is
+            alignments.append((None, out_idx))
+
+    return alignments
+
+
+def postprocess_decoder_tokens(
+    encoder_tokens: List[str],
+    decoder_tokens: List[str],
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING,
+    pitch_window: int = 5,
+    alignment_window: int = 5,
+    max_fret_span: int = 5,
+    enforce_playability: bool = True,
+) -> List[str]:
+    """
+    Apply post-processing to correct pitch and time shift errors.
+
+    This function:
+    1. Aligns input notes to output tabs using a sliding window
+    2. Corrects pitch errors within ±pitch_window MIDI notes
+    3. Matches time shifts from input to output
+    4. Uses fret_stretch metric to select best alternative fingerings
+    5. Optionally enforces fret span constraint for playable chords
+
+    Args:
+        encoder_tokens: Input MIDI tokens (NOTE_ON, TIME_SHIFT, NOTE_OFF sequence)
+        decoder_tokens: Model's predicted tablature tokens (TAB, TIME_SHIFT pairs)
+        capo: Capo position (0-7)
+        tuning: Tuple of 6 open string pitches (string 1 to string 6)
+        pitch_window: Only correct if pitch difference <= this value (MIDI notes)
+        alignment_window: Position window for matching input to output notes
+        max_fret_span: Maximum allowed fret span for playable chords (default 5)
+        enforce_playability: If True, apply fret span constraint to chords (default True)
+
+    Returns:
+        Corrected decoder tokens with pitch and time shift corrections applied
+    """
+    # Extract notes and tabs
+    input_notes = extract_input_notes(encoder_tokens)
+    output_tabs = extract_output_tabs(decoder_tokens)
+
+    if len(output_tabs) == 0:
+        return decoder_tokens
+
+    # Align sequences
+    alignments = align_sequences_with_window(input_notes, output_tabs, alignment_window)
+
+    # Apply corrections
+    corrected_tokens = []
+
+    for input_idx, output_idx in alignments:
+        out_string, out_fret, out_time_shift = output_tabs[output_idx]
+
+        # If no aligned input, keep output as-is
+        if input_idx is None:
+            corrected_tokens.append(f"TAB<{out_string},{out_fret}>")
+            corrected_tokens.append(f"TIME_SHIFT<{out_time_shift}>")
+            continue
+
+        input_pitch, input_time_shift = input_notes[input_idx]
+
+        # Calculate predicted MIDI pitch
+        predicted_pitch = tab_to_midi_pitch(out_string, out_fret, capo, tuning)
+        pitch_diff = abs(input_pitch - predicted_pitch)
+
+        # Determine correct fingering
+        if pitch_diff == 0:
+            # Pitch already correct, keep original fingering
+            corrected_string, corrected_fret = out_string, out_fret
+        elif pitch_diff <= pitch_window:
+            # Pitch within window, find best alternative fingering
+            alternatives = find_alternative_fingerings(input_pitch, capo, tuning)
+            if alternatives:
+                corrected_string, corrected_fret = select_best_fingering(
+                    alternatives, out_string, out_fret
+                )
+            else:
+                # No valid alternative, keep original (shouldn't happen)
+                corrected_string, corrected_fret = out_string, out_fret
+        else:
+            # Pitch difference too large, keep original
+            corrected_string, corrected_fret = out_string, out_fret
+
+        # Always use input time shift
+        corrected_time_shift = input_time_shift
+
+        # Add corrected tokens
+        corrected_tokens.append(f"TAB<{corrected_string},{corrected_fret}>")
+        corrected_tokens.append(f"TIME_SHIFT<{corrected_time_shift}>")
+
+    # Apply fret span constraint for playable chords
+    if enforce_playability:
+        corrected_tokens = _apply_playability_constraint(
+            corrected_tokens=corrected_tokens,
+            alignments=alignments,
+            input_notes=input_notes,
+            capo=capo,
+            tuning=tuning,
+            max_fret_span=max_fret_span,
+        )
+
+    # Add EOS token if present in original
+    if decoder_tokens and decoder_tokens[-1] == "<eos>":
+        corrected_tokens.append("<eos>")
+
+    return corrected_tokens
+
+
+def _apply_playability_constraint(
+    corrected_tokens: List[str],
+    alignments: List[Tuple[Optional[int], int]],
+    input_notes: List[Tuple[int, int]],
+    capo: int,
+    tuning: Tuple[int, ...],
+    max_fret_span: int,
+) -> List[str]:
+    """Apply fret span constraint to chords in corrected tokens.
+
+    Groups tokens into chords and re-fingers any chord that exceeds
+    the maximum fret span.
+
+    Args:
+        corrected_tokens: List of TAB and TIME_SHIFT tokens (no EOS)
+        alignments: List of (input_idx, output_idx) pairs from alignment
+        input_notes: List of (midi_pitch, time_shift) tuples from encoder
+        capo: Capo position
+        tuning: Guitar tuning
+        max_fret_span: Maximum allowed fret span
+
+    Returns:
+        Corrected tokens with playability constraint applied
+    """
+    # Group tokens into chords
+    chords = group_tokens_into_chords(corrected_tokens)
+
+    if not chords:
+        return corrected_tokens
+
+    # Extract tab positions from corrected tokens
+    tabs = extract_output_tabs(corrected_tokens)
+
+    # Build mapping from output index to alignment/pitch info
+    output_to_pitch: Dict[int, int] = {}
+    for input_idx, output_idx in alignments:
+        if input_idx is not None and input_idx < len(input_notes):
+            output_to_pitch[output_idx] = input_notes[input_idx][0]
+
+    # Process each chord
+    result_tabs: List[Tuple[int, int, int]] = list(tabs)
+
+    for chord_indices in chords:
+        if len(chord_indices) <= 1:
+            continue  # Single notes are always playable
+
+        # Get chord positions
+        chord_positions = [(tabs[i][0], tabs[i][1]) for i in chord_indices]
+
+        # Check if already playable
+        if is_chord_playable(chord_positions, max_fret_span):
+            continue
+
+        # Get pitches for this chord
+        midi_pitches = []
+        for idx in chord_indices:
+            if idx in output_to_pitch:
+                midi_pitches.append(output_to_pitch[idx])
+            else:
+                # Calculate pitch from tab position if not in alignment
+                string, fret = tabs[idx][0], tabs[idx][1]
+                midi_pitches.append(tab_to_midi_pitch(string, fret, capo, tuning))
+
+        # Refinger the chord
+        new_positions = refinger_chord_for_playability(
+            chord_positions=chord_positions,
+            midi_pitches=midi_pitches,
+            capo=capo,
+            tuning=tuning,
+            max_span=max_fret_span,
+        )
+
+        # Update result tabs with new positions
+        for i, idx in enumerate(chord_indices):
+            new_string, new_fret = new_positions[i]
+            old_time_shift = result_tabs[idx][2]
+            result_tabs[idx] = (new_string, new_fret, old_time_shift)
+
+    # Rebuild tokens from updated tabs
+    new_tokens = []
+    for string, fret, time_shift in result_tabs:
+        new_tokens.append(f"TAB<{string},{fret}>")
+        new_tokens.append(f"TIME_SHIFT<{time_shift}>")
+
+    return new_tokens
+
+
+# ---------------------------------------------------------------------------
+# Timing-Aware Postprocessing for Audio-to-Tab Pipelines
+# ---------------------------------------------------------------------------
+
+def midi_notes_to_encoder_tokens_with_timing(
+    midi_notes: List[Dict],
+    time_shift_quantum_ms: int = 100,
+    max_duration_ms: int = 5000,
+) -> Tuple[List[str], TimingContext]:
+    """Convert MIDI notes to encoder tokens while preserving original timing.
+    
+    This is the key function for the audio-to-tab pipeline. It:
+    1. Sorts notes by onset time
+    2. Detects chords (notes with same onset)
+    3. Creates quantized encoder tokens for the model
+    4. Preserves original continuous timing in TimingContext
+    
+    Args:
+        midi_notes: List of dicts with keys:
+            - 'pitch': MIDI pitch (int, 0-127)
+            - 'start': onset time in seconds (float)
+            - 'duration': duration in seconds (float)
+            Or alternatively:
+            - 'pitch': MIDI pitch
+            - 'onset': onset time in seconds (alias for 'start')
+            - 'offset': end time in seconds (duration = offset - onset)
+        time_shift_quantum_ms: Quantization step in milliseconds (default 100)
+        max_duration_ms: Maximum duration cap in milliseconds (default 5000)
+        
+    Returns:
+        Tuple of (encoder_tokens, timing_context):
+        - encoder_tokens: List of NOTE_ON, TIME_SHIFT, NOTE_OFF token strings
+        - timing_context: TimingContext with original timing for each note
+        
+    Example:
+        >>> notes = [
+        ...     {'pitch': 60, 'start': 0.0, 'duration': 0.5},
+        ...     {'pitch': 64, 'start': 0.0, 'duration': 0.5},  # chord with above
+        ...     {'pitch': 67, 'start': 0.55, 'duration': 0.3},
+        ... ]
+        >>> tokens, timing = midi_notes_to_encoder_tokens_with_timing(notes)
+        >>> # tokens ready for model, timing preserves original 0.0, 0.0, 0.55 onsets
+    """
+    # Normalize note format
+    normalized_notes = []
+    for note in midi_notes:
+        pitch = int(note['pitch'])
+        
+        # Handle different key names for onset time
+        if 'start' in note:
+            onset = float(note['start'])
+        elif 'onset' in note:
+            onset = float(note['onset'])
+        else:
+            raise ValueError("Note must have 'start' or 'onset' key")
+        
+        # Handle different key names for duration
+        if 'duration' in note:
+            duration = float(note['duration'])
+        elif 'offset' in note:
+            duration = float(note['offset']) - onset
+        else:
+            raise ValueError("Note must have 'duration' or 'offset' key")
+            
+        normalized_notes.append({
+            'pitch': pitch,
+            'onset': onset,
+            'duration': duration
+        })
+    
+    # Sort by onset time, then by pitch for consistent ordering
+    sorted_notes = sorted(normalized_notes, key=lambda n: (n['onset'], n['pitch']))
+    
+    # Group notes by onset time to detect chords
+    # Notes within 20ms of each other are considered simultaneous (captures typical strumming)
+    CHORD_THRESHOLD_SEC = 0.02
+    
+    onset_groups: List[List[Dict]] = []
+    current_group: List[Dict] = []
+    current_onset: Optional[float] = None
+    
+    for note in sorted_notes:
+        if current_onset is None or abs(note['onset'] - current_onset) <= CHORD_THRESHOLD_SEC:
+            current_group.append(note)
+            if current_onset is None:
+                current_onset = note['onset']
+        else:
+            if current_group:
+                onset_groups.append(current_group)
+            current_group = [note]
+            current_onset = note['onset']
+    
+    if current_group:
+        onset_groups.append(current_group)
+    
+    # Build encoder tokens and timing context
+    encoder_tokens: List[str] = []
+    timing_context = TimingContext(time_shift_quantum_ms=time_shift_quantum_ms)
+    
+    for group_idx, group in enumerate(onset_groups):
+        for note_idx, note in enumerate(group):
+            pitch = note['pitch']
+            onset = note['onset']
+            duration = note['duration']
+            
+            # Determine if this is the last note in a chord group
+            is_chord_note = len(group) > 1
+            is_last_in_chord = note_idx == len(group) - 1
+            
+            # Calculate duration for TIME_SHIFT token
+            duration_ms = duration * 1000
+            duration_ms = min(duration_ms, max_duration_ms)
+            
+            # For chord notes (except last), use TIME_SHIFT<0>
+            if is_chord_note and not is_last_in_chord:
+                quantized_ms = 0
+            else:
+                # Quantize to nearest step
+                quantized_ms = int(round(duration_ms / time_shift_quantum_ms)) * time_shift_quantum_ms
+                # Ensure minimum duration for non-chord notes
+                if quantized_ms == 0:
+                    quantized_ms = time_shift_quantum_ms
+            
+            # Add encoder tokens
+            encoder_tokens.append(f"NOTE_ON<{pitch}>")
+            encoder_tokens.append(f"TIME_SHIFT<{quantized_ms}>")
+            encoder_tokens.append(f"NOTE_OFF<{pitch}>")
+            
+            # Preserve original timing
+            timing_context.add_note(
+                onset_sec=onset,
+                duration_sec=duration,
+                pitch=pitch,
+                quantized_duration_ms=quantized_ms
+            )
+    
+    return encoder_tokens, timing_context
+
+
+def postprocess_with_timing(
+    encoder_tokens: List[str],
+    decoder_tokens: List[str],
+    timing_context: TimingContext,
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING,
+    pitch_window: int = 5,
+    alignment_window: int = 5,
+    max_fret_span: int = 5,
+    enforce_playability: bool = True,
+) -> List[TabEvent]:
+    """Postprocess model output and reconstruct original timing.
+
+    This is the main function for getting tabs with continuous timing from
+    the audio-to-tab pipeline. It:
+    1. Applies standard pitch correction
+    2. Aligns output tabs to input notes
+    3. Reconstructs original continuous timing from TimingContext
+    4. Optionally enforces fret span constraint for playable chords
+
+    Args:
+        encoder_tokens: Input encoder tokens (may include CAPO/TUNING prefix)
+        decoder_tokens: Model's predicted decoder tokens
+        timing_context: TimingContext with original MIDI timing
+        capo: Capo position (0-7)
+        tuning: Guitar tuning as tuple of 6 MIDI pitches
+        pitch_window: Max pitch difference for correction (semitones)
+        alignment_window: Window size for sequence alignment
+        max_fret_span: Maximum allowed fret span for playable chords (default 5)
+        enforce_playability: If True, apply fret span constraint to chords (default True)
+
+    Returns:
+        List of TabEvent objects with:
+        - string, fret: The tablature position
+        - onset_sec: Original onset time from MIDI (continuous)
+        - duration_sec: Original duration from MIDI (continuous)
+        - midi_pitch: The MIDI pitch produced by this tab position
+
+    Example:
+        >>> # After model inference
+        >>> tab_events = postprocess_with_timing(
+        ...     encoder_tokens, decoder_tokens, timing_context
+        ... )
+        >>> for event in tab_events:
+        ...     print(f"String {event.string}, Fret {event.fret} at {event.onset_sec:.3f}s")
+    """
+    # Extract notes and tabs using existing functions
+    input_notes = extract_input_notes(encoder_tokens)
+    output_tabs = extract_output_tabs(decoder_tokens)
+    
+    if len(output_tabs) == 0:
+        return []
+    
+    # Validate timing context matches input notes
+    if len(timing_context.note_timings) != len(input_notes):
+        raise ValueError(
+            f"Timing context has {len(timing_context.note_timings)} notes but "
+            f"encoder tokens have {len(input_notes)} notes. "
+            f"These must match for timing reconstruction."
+        )
+    
+    # Align sequences
+    alignments = align_sequences_with_window(input_notes, output_tabs, alignment_window)
+    
+    # Build tab events with reconstructed timing
+    tab_events: List[TabEvent] = []
+    
+    for input_idx, output_idx in alignments:
+        out_string, out_fret, out_time_shift = output_tabs[output_idx]
+        
+        # Skip outputs with no matching input (model generated more tabs than input notes)
+        # This can happen when the model hallucinates extra chord notes
+        if input_idx is None:
+            continue
+        
+        if input_idx >= len(timing_context.note_timings):
+            raise ValueError(
+                f"Timing context mismatch: input_idx={input_idx} but timing_context "
+                f"only has {len(timing_context.note_timings)} entries. "
+                f"This indicates a bug in the tokenization pipeline."
+            )
+        
+        # Apply pitch correction
+        input_pitch, _ = input_notes[input_idx]
+        predicted_pitch = tab_to_midi_pitch(out_string, out_fret, capo, tuning)
+        pitch_diff = abs(input_pitch - predicted_pitch)
+        
+        if pitch_diff == 0:
+            corrected_string, corrected_fret = out_string, out_fret
+        elif pitch_diff <= pitch_window:
+            alternatives = find_alternative_fingerings(input_pitch, capo, tuning)
+            if alternatives:
+                corrected_string, corrected_fret = select_best_fingering(
+                    alternatives, out_string, out_fret
+                )
+            else:
+                corrected_string, corrected_fret = out_string, out_fret
+        else:
+            corrected_string, corrected_fret = out_string, out_fret
+        
+        # Reconstruct timing from TimingContext
+        timing_info = timing_context.note_timings[input_idx]
+        onset_sec = timing_info.onset_sec
+        duration_sec = timing_info.duration_sec
+        
+        tab_events.append(TabEvent(
+            string=corrected_string,
+            fret=corrected_fret,
+            onset_sec=onset_sec,
+            duration_sec=duration_sec,
+            midi_pitch=input_pitch
+        ))
+
+    # Apply fret span constraint for playable chords
+    if enforce_playability:
+        tab_events = _apply_playability_constraint_to_events(
+            tab_events=tab_events,
+            decoder_tokens=decoder_tokens,
+            capo=capo,
+            tuning=tuning,
+            max_fret_span=max_fret_span,
+        )
+
+    return tab_events
+
+
+def _group_events_by_onset(tab_events: List[TabEvent], threshold_sec: float = 0.015) -> List[List[int]]:
+    """Group TabEvent indices into chords based on onset time proximity.
+
+    Events with onset times within threshold_sec of each other are considered
+    part of the same chord.
+
+    Args:
+        tab_events: List of TabEvent objects (assumed sorted by onset_sec)
+        threshold_sec: Maximum onset time difference to be considered same chord
+
+    Returns:
+        List of lists, each containing indices of events in same chord
+    """
+    if not tab_events:
+        return []
+
+    chords: List[List[int]] = []
+    current_chord: List[int] = [0]
+    current_onset = tab_events[0].onset_sec
+
+    for i in range(1, len(tab_events)):
+        if abs(tab_events[i].onset_sec - current_onset) <= threshold_sec:
+            # Same chord
+            current_chord.append(i)
+        else:
+            # New chord
+            chords.append(current_chord)
+            current_chord = [i]
+            current_onset = tab_events[i].onset_sec
+
+    # Add final chord
+    chords.append(current_chord)
+
+    return chords
+
+
+def _apply_playability_constraint_to_events(
+    tab_events: List[TabEvent],
+    decoder_tokens: List[str],
+    capo: int,
+    tuning: Tuple[int, ...],
+    max_fret_span: int,
+) -> List[TabEvent]:
+    """Apply fret span constraint to TabEvent objects.
+
+    Groups events into chords based on onset time proximity and re-fingers
+    any chord that exceeds the maximum fret span.
+
+    Args:
+        tab_events: List of TabEvent objects after pitch correction
+        decoder_tokens: Original decoder tokens (kept for API compatibility, not used)
+        capo: Capo position
+        tuning: Guitar tuning
+        max_fret_span: Maximum allowed fret span
+
+    Returns:
+        List of TabEvent objects with playability constraint applied
+    """
+    if len(tab_events) <= 1:
+        return tab_events
+
+    # Group events into chords based on onset time proximity
+    # This is more robust than using decoder token indices which may not
+    # align with the filtered tab_events list
+    chords = _group_events_by_onset(tab_events)
+
+    if not chords:
+        return tab_events
+
+    # Make a mutable copy
+    result_events = list(tab_events)
+
+    for chord_indices in chords:
+        if len(chord_indices) <= 1:
+            continue  # Single notes are always playable
+
+        # Get chord positions
+        chord_positions = [(result_events[i].string, result_events[i].fret) for i in chord_indices]
+
+        # Check if already playable
+        if is_chord_playable(chord_positions, max_fret_span):
+            continue
+
+        # Get pitches for this chord
+        midi_pitches = [result_events[i].midi_pitch for i in chord_indices]
+
+        # Refinger the chord
+        new_positions = refinger_chord_for_playability(
+            chord_positions=chord_positions,
+            midi_pitches=midi_pitches,
+            capo=capo,
+            tuning=tuning,
+            max_span=max_fret_span,
+        )
+
+        # Update events with new positions
+        for i, idx in enumerate(chord_indices):
+            new_string, new_fret = new_positions[i]
+            old_event = result_events[idx]
+            result_events[idx] = TabEvent(
+                string=new_string,
+                fret=new_fret,
+                onset_sec=old_event.onset_sec,
+                duration_sec=old_event.duration_sec,
+                midi_pitch=old_event.midi_pitch,
+            )
+
+    return result_events
+
+
+def tab_events_to_dict_list(tab_events: List[TabEvent]) -> List[Dict]:
+    """Convert TabEvent objects to list of dictionaries.
+    
+    Useful for serialization or integration with other systems.
+    
+    Args:
+        tab_events: List of TabEvent objects
+        
+    Returns:
+        List of dicts with keys: string, fret, onset_sec, duration_sec, midi_pitch
+    """
+    return [
+        {
+            'string': event.string,
+            'fret': event.fret,
+            'onset_sec': event.onset_sec,
+            'duration_sec': event.duration_sec,
+            'midi_pitch': event.midi_pitch,
+        }
+        for event in tab_events
+    ]
+
+
+def postprocess_to_timed_tabs(
+    midi_notes: List[Dict],
+    decoder_tokens: List[str],
+    capo: int = 0,
+    tuning: Tuple[int, ...] = STANDARD_TUNING,
+    pitch_window: int = 5,
+    alignment_window: int = 5,
+    time_shift_quantum_ms: int = 100,
+    max_fret_span: int = 5,
+    enforce_playability: bool = True,
+) -> List[TabEvent]:
+    """Convenience function: postprocess decoder tokens using original MIDI notes.
+
+    This combines midi_notes_to_encoder_tokens_with_timing and postprocess_with_timing
+    into a single call for simpler integration.
+
+    Args:
+        midi_notes: Original MIDI notes with timing (as passed to inference)
+        decoder_tokens: Model's predicted decoder tokens
+        capo: Capo position (0-7)
+        tuning: Guitar tuning
+        pitch_window: Max pitch difference for correction
+        alignment_window: Window size for alignment
+        time_shift_quantum_ms: Quantization step used during tokenization
+        max_fret_span: Maximum allowed fret span for playable chords (default 5)
+        enforce_playability: If True, apply fret span constraint to chords (default True)
+
+    Returns:
+        List of TabEvent objects with reconstructed timing
+
+    Example:
+        >>> # Full pipeline usage
+        >>> midi_notes = extract_notes_from_midi(midi_file)  # Your MIDI loader
+        >>> encoder_tokens, timing = midi_notes_to_encoder_tokens_with_timing(midi_notes)
+        >>> decoder_tokens = model.predict(encoder_tokens)  # Your model
+        >>> tab_events = postprocess_to_timed_tabs(midi_notes, decoder_tokens)
+    """
+    # Recreate encoder tokens and timing context
+    encoder_tokens, timing_context = midi_notes_to_encoder_tokens_with_timing(
+        midi_notes,
+        time_shift_quantum_ms=time_shift_quantum_ms,
+    )
+
+    return postprocess_with_timing(
+        encoder_tokens=encoder_tokens,
+        decoder_tokens=decoder_tokens,
+        timing_context=timing_context,
+        capo=capo,
+        tuning=tuning,
+        pitch_window=pitch_window,
+        alignment_window=alignment_window,
+        max_fret_span=max_fret_span,
+        enforce_playability=enforce_playability,
+    )
