@@ -52,11 +52,34 @@ python predict.py --audio_path /data/user/dataset/audio.wav
 
 ### Results
 
-| Header 1 | Header 2 | Header 3 |
-|---|---|---|
-| Row 1, Col 1 | Row 1, Col 2 | Row 1, Col 3 |
-| Row 2, Col 1 | Row 2, Col 2 | Row 2, Col 3 |
+**Audio to MIDI (F1 Score)**
 
+| Model           | GuitarSet | EGDB   | Noisy GuitarSet | Noisy EGDB |
+|----------------|----------|--------|------------------|------------|
+| FretNet        | 69.10%   | 40.90% | 37.30%           | 23.60%     |
+| NoteEM         | 82.90%   | 59.00% | 70.00%           | 67.60%     |
+| Riley et al.   | **88.10%** | 68.90% | 74.20%           | 67.50%     |
+| TART + No Aug  | 87.70%   | 78.50% | 80.60%           | 76.10%     |
+| TART + Aug     | 87.60%   | **78.50%** | **81.30%**       | **76.40%** |
 
-### Members
-Akshaj, Andrea, Peter, Shamak, Samhita, Jiachen, Robbie
+**Technique Classification Results (F1 Score)**
+
+We construct a unified dataset by aggregating multiple sources (AGPT, IDMT, Magcil, Guitar-TECHS, EG-IPT) and mapping their labels into a shared taxonomy.
+
+| Model           | Params | Accuracy | Macro F1 |
+|----------------|--------|----------|----------|
+| Stefani et al. | 2.08M  | 86.7%    | 71.6%    |
+| Fiorini et al. | 3.70M  | 64.3%    | 62.7%    |
+| TART (Ours)    | **160K** | **97.4%** | **95.9%** |
+
+**String–Fret Assignment Results (F1 Score)**
+
+| Dataset                     | Tab Accuracy | Difficulty |
+|----------------------------|--------------|------------|
+| DadaGP                     | 81.24%       | 2.286      |
+| SynthTab                   | **86.13%**   | 2.342      |
+| GuitarSet (DadaGP base)    | 70.32%       | 3.908      |
+| GuitarSet (SynthTab base)  | 72.79%       | 3.993      |
+
+### Contributors
+Akshaj, Andrea, Peter, Shamak, Samhita, Subhash, Jiachen, Robbie
