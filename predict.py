@@ -17,7 +17,7 @@ import tab_generation_utils.preprocess as preprocess
 import argparse
 import shutil
 from pipeline_utils.tab_generation_final import main as tab_generator_final
-from BeatNet.BeatNet import BeatNet
+# from BeatNet.BeatNet import BeatNet
 import tab_generation_utils.jams_test as j
 from huggingface_hub import snapshot_download
 
@@ -61,25 +61,25 @@ def tuning_conversion(chars):
 
 ### Uses beatnet model (80%+ accuracy). Only issue is octave/bpm multiple correction (which is subjective)   
 def estimate_bpm(audio_path):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    estimator = BeatNet(model=2, mode='offline', inference_model='DBN', device=device)
-    output = estimator.process(audio_path)
-    if output is not None:
-        beat_times = output[:, 0]
-    intervals = np.diff(beat_times)
-    bpms = 60 / intervals[intervals > 0]
+    # device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # estimator = BeatNet(model=2, mode='offline', inference_model='DBN', device=device)
+    # output = estimator.process(audio_path)
+    # if output is not None:
+    #     beat_times = output[:, 0]
+    # intervals = np.diff(beat_times)
+    # bpms = 60 / intervals[intervals > 0]
 
-    global_bpm = round(float(np.median(bpms)))
-    if global_bpm < 80:
-        # most likely half-tempo
-        global_bpm *= 2
-    elif global_bpm > 180:
-        # most likely double-tempo
-        global_bpm //= 2
+    # global_bpm = round(float(np.median(bpms)))
+    # if global_bpm < 80:
+    #     # most likely half-tempo
+    #     global_bpm *= 2
+    # elif global_bpm > 180:
+    #     # most likely double-tempo
+    #     global_bpm //= 2
 
-    print("BPM:" , global_bpm)
+    # print("BPM:" , global_bpm)
     
-    return global_bpm
+    return 120
 
 #----------------------------------------------------------------------------------#
 
@@ -218,7 +218,7 @@ def run_technique_model_on_chunks(chunk_paths: List[str], onsets, durations):
     ## Setting env
     SCRIPT_DIR = Path(__file__).parent.resolve()
 
-    MODEL_DIR = SCRIPT_DIR / "models" / "expressive-techniques-guitar" / "run-20260112-131057"
+    MODEL_DIR = SCRIPT_DIR / "expressive-techniques-guitar" / "run-20260112-131057"
 
     # Use an absolute path for audio_slices to be safe
     AUDIO_SLICES_DIR = SCRIPT_DIR / "audio_slices" 
@@ -230,6 +230,10 @@ def run_technique_model_on_chunks(chunk_paths: List[str], onsets, durations):
     out_json_path = results_dir / "predictions.json"
 
     env = os.environ.copy()
+
+    # 🔥 FORCE TensorFlow CPU
+    env["CUDA_VISIBLE_DEVICES"] = "-1"
+
     env.pop('TF_USE_LEGACY_KERAS', None)
 
     cmd = [
@@ -336,7 +340,7 @@ if __name__ == "__main__":
     print("Running our pipeline on:", AUDIO_PATH)
     SCRIPT_DIR = Path(__file__).parent.resolve()
     MUSIC_TO_MIDI_PATH = str(
-        SCRIPT_DIR / "models" / "audio_to_midi" / 
+        SCRIPT_DIR / "audio_to_midi" / 
         "gaps_goat_guitartechs_leduc_limited_regress_onset_offset_frame_velocity_bce_log332_iter2000_lr1e-05_bs4.pth"
     )
     MIDI_INFERENCE_SCRIPT = str(SCRIPT_DIR / "pipeline_utils" / "midi_utils" / "inference.py")
@@ -371,8 +375,11 @@ if __name__ == "__main__":
     tuning_dict = {i + 1: pitch for i, pitch in enumerate(TUNING)}
     jam = preprocess.midi_to_jams_with_tablature_from_sf_assignment(midi_path, tab_list, bpm=bpm, tuning=tuning_dict, capo = CAPO)
     jam = preprocess.add_exp_techniques_to_existing_jam(jam, exp_onset_dur_tuples)
-    output_name = f"{os.path.splitext(os.path.basename(midi_path))[0]}.xml"
-    output_musicxml = f"{os.path.splitext(os.path.basename(midi_path))[0]}.musicxml"
+    RESULTS_DIR = SCRIPT_DIR / "results"
+    RESULTS_DIR.mkdir(exist_ok=True)
+
+    output_name = str(RESULTS_DIR / f"{os.path.splitext(os.path.basename(midi_path))[0]}.xml")
+    output_musicxml = str(RESULTS_DIR / f"{os.path.splitext(os.path.basename(midi_path))[0]}.musicxml")
     jams_path = j.save_jam(jam, output_name)
 
     #----------------------------------------------------------------------------------#
