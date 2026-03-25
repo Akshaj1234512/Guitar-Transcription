@@ -28,7 +28,7 @@ DROP_D_TUNING: Tuple[int, ...] = (64, 59, 55, 50, 45, 38)
 def run_tab_generation(midi_path, capo=0, tuning=STANDARD_TUNING):
     ''' run inference on andrea's model '''
     BASE_DIR = Path(__file__).resolve().parents[1]
-    CHECKPOINT_PATH = str(BASE_DIR / "string-fret" / "best_model.pt")
+    CHECKPOINT_PATH = str(BASE_DIR / "models" / "string-fret" / "best_model.pt")
     TOKENIZER_PATH = str(BASE_DIR / "t5_fretting_transformer" / "universal_tokenizer")
 
     inference = FretT5Inference(

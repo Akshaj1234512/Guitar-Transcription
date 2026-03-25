@@ -17,7 +17,7 @@ import tab_generation_utils.preprocess as preprocess
 import argparse
 import shutil
 from pipeline_utils.tab_generation_final import main as tab_generator_final
-# from BeatNet.BeatNet import BeatNet
+from BeatNet.BeatNet import BeatNet
 import tab_generation_utils.jams_test as j
 from huggingface_hub import snapshot_download
 
@@ -61,25 +61,25 @@ def tuning_conversion(chars):
 
 ### Uses beatnet model (80%+ accuracy). Only issue is octave/bpm multiple correction (which is subjective)   
 def estimate_bpm(audio_path):
-    # device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # estimator = BeatNet(model=2, mode='offline', inference_model='DBN', device=device)
-    # output = estimator.process(audio_path)
-    # if output is not None:
-    #     beat_times = output[:, 0]
-    # intervals = np.diff(beat_times)
-    # bpms = 60 / intervals[intervals > 0]
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    estimator = BeatNet(model=2, mode='offline', inference_model='DBN', device=device)
+    output = estimator.process(audio_path)
+    if output is not None:
+        beat_times = output[:, 0]
+    intervals = np.diff(beat_times)
+    bpms = 60 / intervals[intervals > 0]
 
-    # global_bpm = round(float(np.median(bpms)))
-    # if global_bpm < 80:
-    #     # most likely half-tempo
-    #     global_bpm *= 2
-    # elif global_bpm > 180:
-    #     # most likely double-tempo
-    #     global_bpm //= 2
+    global_bpm = round(float(np.median(bpms)))
+    if global_bpm < 80:
+        # most likely half-tempo
+        global_bpm *= 2
+    elif global_bpm > 180:
+        # most likely double-tempo
+        global_bpm //= 2
 
-    # print("BPM:" , global_bpm)
+    print("BPM:" , global_bpm)
     
-    return 120
+    return global_bpm
 
 #----------------------------------------------------------------------------------#
 
@@ -218,7 +218,7 @@ def run_technique_model_on_chunks(chunk_paths: List[str], onsets, durations):
     ## Setting env
     SCRIPT_DIR = Path(__file__).parent.resolve()
 
-    MODEL_DIR = SCRIPT_DIR / "expressive-techniques-guitar" / "run-20260112-131057"
+    MODEL_DIR = SCRIPT_DIR / "models" / "expressive-techniques-guitar" / "run-20260112-131057"
 
     # Use an absolute path for audio_slices to be safe
     AUDIO_SLICES_DIR = SCRIPT_DIR / "audio_slices" 
@@ -340,7 +340,7 @@ if __name__ == "__main__":
     print("Running our pipeline on:", AUDIO_PATH)
     SCRIPT_DIR = Path(__file__).parent.resolve()
     MUSIC_TO_MIDI_PATH = str(
-        SCRIPT_DIR / "audio_to_midi" / 
+        SCRIPT_DIR  / "models" / "audio_to_midi" / 
         "gaps_goat_guitartechs_leduc_limited_regress_onset_offset_frame_velocity_bce_log332_iter2000_lr1e-05_bs4.pth"
     )
     MIDI_INFERENCE_SCRIPT = str(SCRIPT_DIR / "pipeline_utils" / "midi_utils" / "inference.py")
@@ -360,7 +360,7 @@ if __name__ == "__main__":
     midi_dict_techniques = [event for event in midi_dict if event['duration_seconds'] >= MIN_AUDIO_SLICE_DURATION] # for technique detection model
     # Note: the below function has several path variables you may need to change
     exp_onset_dur_tuples = run_technique_model_on_chunks(*audio_midi_to_chunks(AUDIO_PATH, midi_dict_techniques))
-    print(exp_onset_dur_tuples)
+    # print(exp_onset_dur_tuples)
     # exp_onset_dur_tuples = cache.cached_technique_result(AUDIO_PATH, midi_dict_techniques, force_rerun=False) ## for TESTING
 
     #----------------------------------------------------------------------------------#
