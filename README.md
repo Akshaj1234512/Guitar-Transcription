@@ -52,7 +52,7 @@ python predict.py --audio_path /data/user/dataset/audio.wav
 
 ### Results
 
-**Audio to MIDI (F1 Score)**
+**Audio to MIDI (F1 Score):**
 
 | Model           | GuitarSet | EGDB   | Noisy GuitarSet | Noisy EGDB |
 |----------------|----------|--------|------------------|------------|
@@ -62,7 +62,7 @@ python predict.py --audio_path /data/user/dataset/audio.wav
 | TART + No Aug  | 87.70%   | 78.50% | 80.60%           | 76.10%     |
 | TART + Aug     | 87.60%   | **78.50%** | **81.30%**       | **76.40%** |
 
-**Technique Classification Results (F1 Score)**
+**Technique Classification Results (F1 Score):**
 
 We construct a unified dataset by aggregating multiple sources (AGPT, IDMT, Magcil, Guitar-TECHS, EG-IPT) and mapping their labels into a shared taxonomy.
 
@@ -72,7 +72,7 @@ We construct a unified dataset by aggregating multiple sources (AGPT, IDMT, Magc
 | Fiorini et al. | 3.70M  | 64.3%    | 62.7%    |
 | TART (Ours)    | **160K** | **97.4%** | **95.9%** |
 
-**String–Fret Assignment Results (F1 Score)**
+**String–Fret Assignment Results (F1 Score):**
 
 | Dataset                     | Tab Accuracy | Difficulty |
 |----------------------------|--------------|------------|
