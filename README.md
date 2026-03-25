@@ -5,7 +5,6 @@ Automatic Music Transcription (AMT) has advanced significantly for the piano, bu
 
 ### Setup Instructions
 
-**Setup:**
 Set up a new Conda environment:
 
 ```
