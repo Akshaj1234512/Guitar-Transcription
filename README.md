@@ -50,16 +50,13 @@ cd ~/Music-AI/
 python predict.py --audio_path /data/user/dataset/audio.wav
 ```
 
-### System Components
+### Results
 
-```
-| Stage                    | Model Type                | Description                             |
-| ------------------------ | ------------------------- | --------------------------------------- |
-| Audio-to-MIDI            | CRNN                      | Predicts pitch, onset, offset, velocity |
-| Technique Classification | CNN + BiLSTM              | Predicts expressive playing techniques  |
-| String–Fret Assignment   | Transformer               | Generates playable fingerings           |
-| Tablature Generation     | Rule-based + quantization | Produces structured tablature           |
-```
+| Header 1 | Header 2 | Header 3 |
+|---|---|---|
+| Row 1, Col 1 | Row 1, Col 2 | Row 1, Col 3 |
+| Row 2, Col 1 | Row 2, Col 2 | Row 2, Col 3 |
+
 
 ### Members
 Akshaj, Andrea, Peter, Shamak, Samhita, Jiachen, Robbie
