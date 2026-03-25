@@ -1,4 +1,0 @@
-# Denoising configuration - only specify parameters you want to override
-prop_decrease: 0.8
-# n_fft: 2048
-# stationary: false

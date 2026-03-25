@@ -1,0 +1,7 @@
+*.pyc
+*__pycache__/
+pipeline_utils/pipeline_backups
+models
+audio_slices
+model_outputs
+results
