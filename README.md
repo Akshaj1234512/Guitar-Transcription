@@ -34,11 +34,18 @@ hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi
 hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar
 ```
 
+If you hit a HuggingFace rate limit (anonymous users are capped at ~1000 requests/5min), either run `hf auth login` first or retry with `--max-workers 1`:
+
+```bash
+hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi --max-workers 1
+hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar --max-workers 1
+```
+
 Stage 3 (AudioFret) — **[TODO: upload checkpoint to HuggingFace and replace this block]**
 
 ```bash
 # Once uploaded:
-# hf download <username>/audiofret --local-dir string-fret
+# hf download <username>/audiofret --local-dir string-fret --max-workers 1
 
 # For now, place the file manually:
 mkdir -p string-fret
