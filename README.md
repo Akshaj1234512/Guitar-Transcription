@@ -101,19 +101,6 @@ Music-AI/
     └── batch_cnn_oracle.py           # CNN-alone fed GT MIDI
 ```
 
-## Training checkpoints
-
-`checkpoints/` contains the intermediate and final model weights produced during the project. These are useful for reproducing training or running ablations.
-
-| File | Description | Used by |
-|---|---|---|
-| `dadagp_tiny_t5.pt` | Tiny T5 (d=128, 3 layers) trained on DadaGP — baseline "Fretting-Transformer" reproduction | `evaluation/batch_stage3_only.py` |
-| `synthtab_tiny_t5.pt` | Tiny T5 trained on SynthTab | baseline comparison |
-| `scaled_t5.pt` | Scaled T5 (d=256, 6 layers, gated-GELU) trained on DadaGP + SynthTab — AudioFret backbone init | `training/finetune_audio_conditioned.py` |
-| `string_classifier.pt` | Audio CNN string classifier trained on GAPS+GOAT+Guitar-TECHS — AudioFret CNN init | `training/finetune_audio_conditioned.py` |
-| `cnn_v3.pt` | Best-of-class CNN string classifier — used as the "CNN alone" baseline row | `evaluation/batch_cnn_oracle.py` |
-| `audiofret.pt` | **The final AudioFret (GT) model used by the deployed tool** | `predict.py` |
-
 ## Results
 
 All numbers are **zero-shot** (no finetuning on GuitarSet or EGDB at any stage) under a single fixed threshold configuration.
@@ -143,11 +130,10 @@ All numbers are **zero-shot** (no finetuning on GuitarSet or EGDB at any stage) 
 
 | Setting | GS cln | GS noi | EG cln | EG noi | Avg |
 |---|---|---|---|---|---|
-| **TART end-to-end** | 56.0 | 51.2 | 55.2 | 53.9 | 54.1 |
-| Oracle upper bound (perfect Stage 1) | 69.2 | 69.5 | 74.8 | 73.7 | 71.8 |
-| Propagation cost (Δ) | 13.2 | 18.3 | 19.7 | 19.8 | 17.8 |
+| **TART end-to-end** | 56.0 | 51.2 | 55.2 | 53.9 | **54.1** |
+| Oracle upper bound (perfect Stage 1) | 69.2 | 69.5 | 74.8 | 73.7 | **71.8** |
+| Propagation cost (Δ) | 13.2 | 18.3 | 19.7 | 19.8 | **17.8** |
 
-On EGDB only (truly zero-shot for both systems), TART beats TabCNN by **+26.7 points** end-to-end.
 
 ## Reproducing the paper
 
