@@ -1,95 +1,165 @@
 # TART: Technique-Aware Audio-to-Tab Guitar Transcription
 
-### Overview/Abstract
-Automatic Music Transcription (AMT) has advanced significantly for the piano, but transcription for the guitar remains limited due to several key challenges. Current systems fail to detect expressive techniques (e.g., slides, bends, percussive hits) and often map notes to the incorrect string and fret combination in the generated tablature. Furthermore, prior models are typically trained on professionally recorded, isolated datasets, limiting their generalizability to varied acoustic environments with background noise, such as home recordings made on standard smartphones. To overcome these limitations, we propose TART, a four-stage end-to-end pipeline that produces detailed guitar tablature directly from guitar audio. Our system consists of (1) a CRNN-based audio-to-MIDI transcription model; (2) a CNN-BiLSTM for expressive technique classification; (3) a Transformer-based string and fret assignment model; and (4) an automated tablature generator, all consolidated into a pipeline that can output tablature from a given audio sample. To the best of our knowledge, this framework is the first to generate detailed tablature sheet music with accurate fingerings and expressive technique labels from guitar audio.
+End-to-end guitar tablature transcription from raw audio. TART takes a guitar recording and produces a playable tablature with correct onset, pitch, string, fret, and expressive technique labels.
 
-### Setup Instructions
+## Overview
 
-Set up a new Conda environment:
+Automatic Music Transcription has advanced significantly for the piano but remains limited for the guitar: existing systems often fail to detect expressive techniques (slides, bends, hammer-ons), frequently map notes to the wrong string and fret, and generalize poorly to recordings with real-world noise. TART addresses these gaps with a four-stage pipeline:
 
-```
+1. **Audio → MIDI.** A high-resolution CRNN transcribes guitar audio to MIDI notes, trained with a Stochastic Noise Augmentor to stay robust under varied recording conditions.
+2. **Expressive technique classification.** A compact CNN-BiLSTM labels each note with techniques like hammer-on, bend, slide, or palm mute.
+3. **String/fret assignment (AudioFret).** A T5-style encoder-decoder conditioned on per-note audio timbre + symbolic context resolves the pitch-redundancy problem, assigning each note to a specific string and fret.
+4. **Tablature generation.** The combined output is rendered as standard notation (.musicxml) and timed MIDI.
+
+The codebase contains everything needed to (a) deploy the pipeline on your own recordings and (b) reproduce every result from the paper.
+
+## Quick start (inference)
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/Akshaj1234512/Guitar-Transcription.git
+cd Guitar-Transcription
 conda env create -f environment.yml
 conda activate new_venv
 ```
 
-Download the pretrained models:
-```
-mkdir -p ~/Music-AI/models
-cd ~/Music-AI/models
+### 2. Download pretrained models
+
+Stage 1 (audio → MIDI) and Stage 2 (expressive techniques):
+
+```bash
+mkdir -p models && cd models
 hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi
-hf download shamakg/string-fret-guitar --local-dir string-fret
 hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar
 ```
 
-If you encounter API rate limit issues, use:
-```
-hf download shamakg/audio_to_midi_guitar \
-  --local-dir audio_to_midi \
-  --max-workers 1
+Stage 3 (AudioFret) — **[TODO: upload checkpoint to HuggingFace and replace this block]**
 
-hf download shamakg/string-fret-guitar \
-  --local-dir string-fret \
-  --max-workers 1
+```bash
+# Once uploaded:
+# hf download <username>/audiofret --local-dir string-fret
 
-hf download shamakg/expressive-techniques-guitar \
-  --local-dir expressive-techniques-guitar \
-  --max-workers 1
+# For now, place the file manually:
+mkdir -p string-fret
+cp ../checkpoints/audiofret.pt string-fret/audiofret.pt
 ```
 
-**Usage:**
+### 3. Transcribe a file
 
-To generate .MIDI and .XML files use the command:
-```
-cd ~/Music-AI/
-python predict.py --audio_path [PATH_TO_AUDIO]
+```bash
+python predict.py --audio_path /path/to/guitar.wav
 ```
 
-For example:
-```
-cd ~/Music-AI/
-python predict.py --audio_path /data/user/dataset/audio.wav
-```
+Outputs land in `results/` as `.xml`, `.musicxml`, `.jams`, and `.mid`.
 
-To generate .MIDI and .XML files of audio files in a folder use:
-```
-cd ~/Music-AI/
-python batch_process_audio.py \
-  [PATH_TO_FOLDER1] \
-  [PATH_TO_FOLDER2] \
-  ...
+### 4. Batch transcribe
+
+```bash
+python batch_process_audio.py /path/to/folder1 /path/to/folder2
 ```
 
+## Repository layout
 
-### Results
+```
+Music-AI/
+├── predict.py                    # single-file inference entry point
+├── batch_process_audio.py        # batch version
+├── pipeline_utils/               # Stage 1 + technique + AudioFret runners + tab gen
+├── tab_generation_utils/         # MIDI → MusicXML / JAMS rendering
+├── t5_fretting_transformer/      # AudioFret model, tokenizer, and constrained decoder
+├── models/                       # downloaded pretrained checkpoints (gitignored)
+├── checkpoints/                  # locally saved training checkpoints (see below)
+├── environment.yml
+│
+├── training/                     # scripts to reproduce every trained model
+│   ├── train_fret_t5.py              # tiny T5 (Fretting-Transformer baseline)
+│   ├── train_scaled.py               # scaled T5 backbone (d=256, 6 layers)
+│   ├── train_audio_conditioned.py    # per-note audio CNN string classifier
+│   ├── finetune_audio_conditioned.py # full AudioFret end-to-end finetune
+│   ├── prepare_finetune_data.py      # builds finetune manifests from GAPS/GOAT/Guitar-TECHS
+│   └── data_loaders/                 # dataset adapters (GAPS, GOAT, Guitar-TECHS, etc.)
+│
+└── evaluation/                   # scripts to reproduce every reported number
+    ├── evaluate_guitarset.py         # note-level metrics on GuitarSet
+    ├── evaluate_egdb.py              # note-level metrics on EGDB
+    ├── evaluate_frame_level.py       # TabCNN-style frame-level metrics
+    ├── calculate_midi_f1.py          # mir_eval-based MIDI F1
+    ├── eval_string_classifier.py     # standalone CNN evaluation
+    ├── batch_stage1_only.py          # Stage 1 audio→MIDI inference
+    ├── batch_stage3_only.py          # symbolic T5 (Fretting-Transformer) inference
+    ├── batch_fusion_inference.py     # AudioFret end-to-end inference
+    ├── oracle_inference.py           # AudioFret fed GT MIDI (isolates Stage 3)
+    ├── batch_stage3_oracle.py        # symbolic T5 fed GT MIDI
+    └── batch_cnn_oracle.py           # CNN-alone fed GT MIDI
+```
 
-**Audio to MIDI (F1 Score):**
+## Training checkpoints
 
-| Model           | GuitarSet | EGDB   | Noisy GuitarSet | Noisy EGDB |
-|----------------|----------|--------|------------------|------------|
-| FretNet        | 69.10%   | 40.90% | 37.30%           | 23.60%     |
-| NoteEM         | 82.90%   | 59.00% | 70.00%           | 67.60%     |
-| Riley et al.   | **88.10%** | 68.90% | 74.20%           | 67.50%     |
-| TART + No Aug  | 87.70%   | 78.50% | 80.60%           | 76.10%     |
-| TART + Aug     | 87.60%   | **78.50%** | **81.30%**       | **76.40%** |
+`checkpoints/` contains the intermediate and final model weights produced during the project. These are useful for reproducing training or running ablations.
 
-**Technique Classification Results (F1 Score):**
+| File | Description | Used by |
+|---|---|---|
+| `dadagp_tiny_t5.pt` | Tiny T5 (d=128, 3 layers) trained on DadaGP — baseline "Fretting-Transformer" reproduction | `evaluation/batch_stage3_only.py` |
+| `synthtab_tiny_t5.pt` | Tiny T5 trained on SynthTab | baseline comparison |
+| `scaled_t5.pt` | Scaled T5 (d=256, 6 layers, gated-GELU) trained on DadaGP + SynthTab — AudioFret backbone init | `training/finetune_audio_conditioned.py` |
+| `string_classifier.pt` | Audio CNN string classifier trained on GAPS+GOAT+Guitar-TECHS — AudioFret CNN init | `training/finetune_audio_conditioned.py` |
+| `cnn_v3.pt` | Best-of-class CNN string classifier — used as the "CNN alone" baseline row | `evaluation/batch_cnn_oracle.py` |
+| `audiofret.pt` | **The final AudioFret (GT) model used by the deployed tool** | `predict.py` |
 
-We construct a unified dataset by aggregating multiple sources (AGPT, IDMT, Magcil, Guitar-TECHS, EG-IPT) and mapping their labels into a shared taxonomy.
+## Results
 
-| Model           | Params | Accuracy | Macro F1 |
-|----------------|--------|----------|----------|
-| Stefani et al. | 2.08M  | 86.7%    | 71.6%    |
-| Fiorini et al. | 3.70M  | 64.3%    | 62.7%    |
-| TART (Ours)    | **160K** | **97.4%** | **95.9%** |
+All numbers are **zero-shot** (no finetuning on GuitarSet or EGDB at any stage) under a single fixed threshold configuration.
 
-**String–Fret Assignment Results (F1 Score):**
+### Stage 1: Audio → MIDI (note-level F1)
 
-| Dataset                     | Tab Accuracy | Difficulty |
-|----------------------------|--------------|------------|
-| DadaGP                     | 81.24%       | 2.286      |
-| SynthTab                   | **86.13%**   | 2.342      |
-| GuitarSet (DadaGP base)    | 70.32%       | 3.908      |
-| GuitarSet (SynthTab base)  | 72.79%       | 3.993      |
+| Model | GS clean | EGDB clean | GS noisy | EGDB noisy | Avg |
+|---|---|---|---|---|---|
+| FretNet        | 69.1 | 40.9 | 37.3 | 23.6 | 42.7 |
+| NoteEM         | 82.9 | 59.0 | 70.0 | 67.6 | 69.9 |
+| Riley et al.   | **88.1** | 68.9 | 74.2 | 67.5 | 74.7 |
+| **TART (ours)** | 87.4 | **79.0** | **82.2** | **76.8** | **81.4** |
 
-### Contributors
-Akshaj, Andrea, Peter, Shamak, Samhita, Subhash, Jiachen, Robbie
+### Stage 3: String/fret assignment (Oracle Tab F1 — isolates Stage 3)
+
+| Model | GS cln | GS noi | EG cln | EG noi | Avg |
+|---|---|---|---|---|---|
+| TabCNN\*             | —    | —    | 30.4 | 25.4 | 27.9 |
+| Fretting-Transformer | 60.4 | 60.4 | 66.3 | 66.3 | 63.3 |
+| CNN alone            | 54.8 | 55.2 | 64.8 | 58.9 | 58.4 |
+| Scaled backbone      | 61.3 | 61.3 | 72.7 | 72.7 | 67.0 |
+| **AudioFret (ours)** | **69.2** | **69.5** | **74.8** | **73.7** | **71.8** |
+
+\*TabCNN released weights were trained on GuitarSet (Chen et al., 2024), so we report EGDB only for a fair zero-shot comparison.
+
+### End-to-end (Tab F1, full pipeline audio → tab)
+
+| Setting | GS cln | GS noi | EG cln | EG noi | Avg |
+|---|---|---|---|---|---|
+| **TART end-to-end** | 56.0 | 51.2 | 55.2 | 53.9 | 54.1 |
+| Oracle upper bound (perfect Stage 1) | 69.2 | 69.5 | 74.8 | 73.7 | 71.8 |
+| Propagation cost (Δ) | 13.2 | 18.3 | 19.7 | 19.8 | 17.8 |
+
+On EGDB only (truly zero-shot for both systems), TART beats TabCNN by **+26.7 points** end-to-end.
+
+## Reproducing the paper
+
+1. **Stage 1 training**: see Riley et al.'s noise-augmented high-resolution CRNN. Our variant is packaged in `pipeline_utils/midi_utils/` with the Stochastic Noise Augmentor.
+2. **Tiny T5 / scaled T5 pretraining**: `python training/train_fret_t5.py` or `train_scaled.py` on DadaGP+SynthTab manifests.
+3. **String classifier pretraining**: `python training/train_audio_conditioned.py --phase 1` on GAPS+GOAT+Guitar-TECHS.
+4. **AudioFret end-to-end finetune**: `python training/finetune_audio_conditioned.py --pretrained-checkpoint checkpoints/scaled_t5.pt --string-classifier-checkpoint checkpoints/string_classifier.pt`.
+5. **Evaluate every row in the Stage 3 table**: run the oracle/end-to-end scripts in `evaluation/` against GuitarSet and EGDB annotations.
+
+## Datasets used
+
+| Stage | Training data | Evaluation data (held out) |
+|---|---|---|
+| Stage 1 | GAPS, GOAT, Guitar-TECHS, Leduc | GuitarSet, EGDB |
+| Stage 2 | AGPT, IDMT, Magcil, Guitar-TECHS, EG-IPT | IDMT, Guitar-TECHS holdouts |
+| Stage 3 | DadaGP, SynthTab (pretraining); GAPS+GOAT+Guitar-TECHS (finetune) | GuitarSet, EGDB |
+
+Neither GuitarSet nor EGDB is used for training at any stage.
+
+## Contributors
+
+Akshaj, Andrea, Peter, Shamak, Samhita, Jiachen, Robbie

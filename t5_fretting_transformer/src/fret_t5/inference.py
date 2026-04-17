@@ -41,7 +41,12 @@ class FretT5Inference:
 
         # Get vocab size from checkpoint to detect if conditioning was used
         state_dict = checkpoint.get("model_state_dict", checkpoint)
-        checkpoint_vocab_size = state_dict['encoder.embed_tokens.weight'].shape[0]
+        if 'shared.weight' in state_dict:
+            checkpoint_vocab_size = state_dict['shared.weight'].shape[0]
+        elif 'encoder.embed_tokens.weight' in state_dict:
+            checkpoint_vocab_size = state_dict['encoder.embed_tokens.weight'].shape[0]
+        else:
+            raise KeyError(f"Can't find embedding weight. Keys: {list(state_dict.keys())[:10]}")
 
         # Always ensure conditioning tokens are available - the model may have been
         # trained with them even if 'conditioning_enabled' flag isn't in checkpoint
@@ -64,6 +69,9 @@ class FretT5Inference:
             num_layers=self.config.tiny_dims.get("num_layers", 4),
             num_heads=self.config.tiny_dims.get("num_heads", 4),
             dropout_rate=self.config.tiny_dims.get("dropout_rate", 0.1),
+            feed_forward_proj=self.config.tiny_dims.get("feed_forward_proj", "relu"),
+            layer_norm_epsilon=self.config.tiny_dims.get("layer_norm_epsilon", 1e-6),
+            relative_attention_num_buckets=self.config.tiny_dims.get("relative_attention_num_buckets", 32),
             is_encoder_decoder=True,
             decoder_start_token_id=self.tokenizer.shared_token_to_id.get("<sos>", 0),
             eos_token_id=self.tokenizer.shared_token_to_id["<eos>"],
@@ -113,7 +121,7 @@ class FretT5Inference:
             outputs = self.model.generate(
                 input_tensor,
                 max_length=512,
-                num_beams=1,
+                num_beams=4,
                 do_sample=False,
                 eos_token_id=self.tokenizer.shared_token_to_id["<eos>"],
                 pad_token_id=self.tokenizer.shared_token_to_id["<pad>"],
@@ -182,7 +190,7 @@ class FretT5Inference:
             outputs = self.model.generate(
                 input_tensor,
                 max_length=512,
-                num_beams=1,
+                num_beams=4,
                 do_sample=False,
                 eos_token_id=self.tokenizer.shared_token_to_id["<eos>"],
                 pad_token_id=self.tokenizer.shared_token_to_id["<pad>"],
@@ -371,7 +379,7 @@ class FretT5Inference:
             outputs = self.model.generate(
                 input_tensor,
                 max_length=512,
-                num_beams=1,
+                num_beams=4,
                 do_sample=False,
                 eos_token_id=self.tokenizer.shared_token_to_id["<eos>"],
                 pad_token_id=self.tokenizer.shared_token_to_id["<pad>"],

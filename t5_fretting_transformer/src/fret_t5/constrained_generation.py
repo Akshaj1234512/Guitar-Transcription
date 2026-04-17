@@ -9,7 +9,7 @@ while maintaining the paper's intended token alternation.
 
 from __future__ import annotations
 
-from typing import Set, Dict, List
+from typing import Optional, Set, Dict, List
 import torch
 from transformers import LogitsProcessor
 
@@ -35,10 +35,14 @@ class V3ConstrainedProcessor(LogitsProcessor):
     This preserves the v3 pairing structure and properly handles chords.
     """
 
-    def __init__(self, tokenizer: MidiTabTokenizerV3, max_chord_size: int = 6, max_fret_span: int = 5):
+    def __init__(self, tokenizer: MidiTabTokenizerV3, max_chord_size: int = 6, max_fret_span: int = 5,
+                 hand_position_bias: float = 0.0, hand_position_decay: float = 0.8):
         self.tokenizer = tokenizer
         self.max_chord_size = max_chord_size
         self.max_fret_span = max_fret_span
+        # Hand position tracking: soft-bias toward frets near recent hand position
+        self.hand_position_bias = hand_position_bias  # logit bonus per fret of proximity
+        self.hand_position_decay = hand_position_decay  # exponential decay for older positions
 
         # Precompute token sets for efficiency
         self.tab_ids: Set[int] = set(tokenizer.get_tab_token_ids())
@@ -94,9 +98,23 @@ class V3ConstrainedProcessor(LogitsProcessor):
         constrained_scores = scores.clone()
         constrained_scores.fill_(float("-inf"))  # Mask everything initially
 
+        # Compute hand position from recent frets
+        hand_positions = self._estimate_hand_positions(input_ids)
+
         for b, last_token in enumerate(last_tokens):
             allowed_ids = self._get_allowed_tokens(last_token, chord_states[b])
             constrained_scores[b, allowed_ids] = scores[b, allowed_ids]
+
+            # Apply soft hand position bias to TAB tokens (only when choosing a new note)
+            if self.hand_position_bias > 0 and hand_positions[b] is not None:
+                hand_pos = hand_positions[b]
+                for tab_id in allowed_ids:
+                    if tab_id in self.tab_token_info:
+                        _, fret = self.tab_token_info[tab_id]
+                        if fret > 0:  # Don't bias open strings
+                            distance = abs(fret - hand_pos)
+                            bonus = max(0, self.hand_position_bias * (12 - distance))
+                            constrained_scores[b, tab_id] += bonus
 
         return constrained_scores
 
@@ -212,6 +230,42 @@ class V3ConstrainedProcessor(LogitsProcessor):
             })
 
         return chord_states
+
+
+    def _estimate_hand_positions(self, input_ids: torch.Tensor) -> List[Optional[float]]:
+        """Estimate current hand position from recent TAB tokens for each batch item.
+
+        Uses exponentially decaying weighted average of recent fret positions.
+        Returns None if no fret history is available.
+        """
+        batch_size = input_ids.shape[0]
+        positions = []
+
+        for b in range(batch_size):
+            frets = []
+            # Scan backwards through generated tokens to find recent frets
+            for i in range(input_ids.shape[1] - 1, max(input_ids.shape[1] - 40, -1), -1):
+                token_id = input_ids[b, i].item()
+                if token_id in self.tab_token_info:
+                    _, fret = self.tab_token_info[token_id]
+                    if fret > 0:  # Ignore open strings
+                        frets.append(fret)
+                    if len(frets) >= 8:  # Look at last 8 fretted notes
+                        break
+
+            if not frets:
+                positions.append(None)
+            else:
+                # Exponentially weighted average (most recent = highest weight)
+                total_weight = 0.0
+                weighted_sum = 0.0
+                for j, f in enumerate(frets):
+                    w = self.hand_position_decay ** j
+                    weighted_sum += f * w
+                    total_weight += w
+                positions.append(weighted_sum / total_weight)
+
+        return positions
 
 
 class ForcedTokenLogitsProcessor(LogitsProcessor):

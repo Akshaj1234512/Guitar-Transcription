@@ -1,5 +1,16 @@
 import sys
 
+# Compatibility shims for madmom (BeatNet dependency) on Python 3.10+ / NumPy >=1.20.
+import collections
+import collections.abc
+for _name in ("MutableSequence", "Iterable", "Callable", "Mapping", "MutableMapping"):
+    if not hasattr(collections, _name):
+        setattr(collections, _name, getattr(collections.abc, _name))
+import numpy as _np
+for _a in ("float", "int", "bool", "object", "complex"):
+    if not hasattr(_np, _a):
+        setattr(_np, _a, getattr(__builtins__, _a) if isinstance(__builtins__, dict) else getattr(__builtins__, _a))
+
 import pretty_midi
 import torch
 import torch.nn as nn
@@ -283,9 +294,9 @@ def run_technique_model_on_chunks(chunk_paths: List[str], onsets, durations):
 
 # STEP 3: String-fret Assignment MODEL
 
-def run_fret_model(midi_file_path, inference, capo=0, tuning=STANDARD_TUNING):
-    
-    final_tab_list: List[Tuple[str, str]] = inference(midi_file_path, capo=capo, tuning=tuning)
+def run_fret_model(midi_file_path, inference, audio_path=None, capo=0, tuning=STANDARD_TUNING):
+
+    final_tab_list: List[Tuple[str, str]] = inference(midi_file_path, audio_path=audio_path, capo=capo, tuning=tuning)
 
     # print("TAB",sorted(final_tab_list, key=lamda t:t.onset_sec)
     
@@ -328,7 +339,7 @@ if __name__ == "__main__":
     parser.add_argument("--audio_path", type=str, required=True, help="Path to the audio file")
     parser.add_argument("--capo", type=int, default=0, help="Capo")
     parser.add_argument("--tuning", type=str, default=STANDARD_TUNING, help="Tuning from high to low, string separated by a space")
-    parser.add_argument("--tempo", default=None, help="Tempo in BPM")
+    parser.add_argument("--tempo", type=int, default=None, help="Tempo in BPM")
     args = parser.parse_args()
     AUDIO_PATH = args.audio_path
     CAPO = args.capo
@@ -350,7 +361,12 @@ if __name__ == "__main__":
     
     bpm = BPM
     if BPM is None:
-        bpm = estimate_bpm(AUDIO_PATH)
+        try:
+            bpm = estimate_bpm(AUDIO_PATH)
+        except Exception as e:
+            print(f"[warn] BeatNet BPM estimation failed ({type(e).__name__}: {e}). "
+                  f"Falling back to 120 BPM. Pass --tempo <bpm> to override.")
+            bpm = 120
     midi_path = run_midi_model(AUDIO_PATH, MUSIC_TO_MIDI_PATH, MIDI_INFERENCE_SCRIPT)
     midi_dict = find_single_note_onsets(midi_path)
 
@@ -367,7 +383,7 @@ if __name__ == "__main__":
 
     print(BPM)
     tab_inference, post_process_tab = string_fret_inference_script.run_tab_generation, calculate_onsets
-    tab_list = post_process_tab(run_fret_model(midi_path, tab_inference, capo=CAPO, tuning=TUNING))
+    tab_list = post_process_tab(run_fret_model(midi_path, tab_inference, audio_path=AUDIO_PATH, capo=CAPO, tuning=TUNING))
 
     #----------------------------------------------------------------------------------#
 

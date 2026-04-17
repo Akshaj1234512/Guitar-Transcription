@@ -313,6 +313,8 @@ dependencies:
       - keras==3.12.1
       - libclang==18.1.1
       - librosa==0.9.2
+      # madmom from git master — PyPI release (0.16.1) has np.float/collections.MutableSequence bugs on Python 3.10+/NumPy 2.
+      # Fresh installs from this env.yml will fetch master; older envs may need predict.py's runtime compat shims.
       - git+https://github.com/CPJKU/madmom.git
       - markdown-it-py==4.0.0
       - mdurl==0.1.2
