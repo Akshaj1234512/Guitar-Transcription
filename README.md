@@ -34,7 +34,7 @@ hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi
 hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar
 ```
 
-If you hit a HuggingFace rate limit (anonymous users are capped at ~1000 requests/5min), either run `hf auth login` first or retry with `--max-workers 1`:
+If you hit a HuggingFace rate limit (anonymous users are capped at ~1000 requests/5min), either run `hf auth login` first or retry each download individually with `--max-workers 1`:
 
 ```bash
 hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi --max-workers 1
