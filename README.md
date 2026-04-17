@@ -26,35 +26,21 @@ conda activate new_venv
 
 ### 2. Download pretrained models
 
-Stage 1 (audio → MIDI) and Stage 2 (expressive techniques):
+All three stage models are hosted on HuggingFace:
 
 ```bash
 mkdir -p models && cd models
 hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi
 hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar
+hf download shamakg/audiofret --local-dir string-fret
 ```
 
-If you hit a HuggingFace rate limit (anonymous users are capped at ~1000 requests/5min), either run `hf auth login` first or retry each download individually with `--max-workers 1`:
+If you hit a HuggingFace rate limit (anonymous users are capped at ~1000 requests per 5 min window), either run `hf auth login` first or retry each download individually with `--max-workers 1`:
 
 ```bash
 hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi --max-workers 1
 hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar --max-workers 1
-```
-
-Stage 3 (AudioFret) — **[TODO: upload `audiofret.pt` to HuggingFace and replace this block]**
-
-Until the AudioFret checkpoint is on HuggingFace, obtain `audiofret.pt` from the authors and place it manually:
-
-```bash
-# (from Guitar-Transcription/models/)
-mkdir -p string-fret
-cp /path/to/audiofret.pt string-fret/audiofret.pt
-```
-
-Once the checkpoint is uploaded, this becomes:
-
-```bash
-hf download <username>/audiofret --local-dir string-fret --max-workers 1
+hf download shamakg/audiofret --local-dir string-fret --max-workers 1
 ```
 
 ### 3. Transcribe a file
