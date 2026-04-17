@@ -41,15 +41,20 @@ hf download shamakg/audio_to_midi_guitar --local-dir audio_to_midi --max-workers
 hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniques-guitar --max-workers 1
 ```
 
-Stage 3 (AudioFret) — **[TODO: upload checkpoint to HuggingFace and replace this block]**
+Stage 3 (AudioFret) — **[TODO: upload `audiofret.pt` to HuggingFace and replace this block]**
+
+Until the AudioFret checkpoint is on HuggingFace, obtain `audiofret.pt` from the authors and place it manually:
 
 ```bash
-# Once uploaded:
-# hf download <username>/audiofret --local-dir string-fret --max-workers 1
-
-# For now, place the file manually:
+# (from Guitar-Transcription/models/)
 mkdir -p string-fret
-cp ../checkpoints/audiofret.pt string-fret/audiofret.pt
+cp /path/to/audiofret.pt string-fret/audiofret.pt
+```
+
+Once the checkpoint is uploaded, this becomes:
+
+```bash
+hf download <username>/audiofret --local-dir string-fret --max-workers 1
 ```
 
 ### 3. Transcribe a file

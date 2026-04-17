@@ -400,6 +400,10 @@ if __name__ == "__main__":
 
     #----------------------------------------------------------------------------------#
 
-    ### FINAL TAB GENERATION 
-    
+    ### FINAL TAB GENERATION
+
     tab_generator_final(jams_path, output_musicxml, bpm = bpm)
+
+    # Clean exit to avoid double-free errors from conflicting C extension
+    # destructors (TF + PyTorch + librosa/madmom cython) during interpreter shutdown.
+    os._exit(0)
