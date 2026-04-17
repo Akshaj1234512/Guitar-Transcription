@@ -91,14 +91,41 @@ def cluster_onsets(tab_data, tempo_bpm, cluster_ms=30.0):
 
     return idx_to_start
 
+_NOTE_TYPE_BASES = [
+    ("whole",   DIVISIONS * 4),
+    ("half",    DIVISIONS * 2),
+    ("quarter", DIVISIONS),
+    ("eighth",  DIVISIONS // 2),
+    ("16th",    DIVISIONS // 4),
+    ("32nd",    DIVISIONS // 8),
+    ("64th",    DIVISIONS // 16),
+]
+
+
 def duration_to_type(dur_ticks):
-    if dur_ticks >= DIVISIONS * 4: return "whole"
-    if dur_ticks >= DIVISIONS * 2: return "half"
-    if dur_ticks >= DIVISIONS:     return "quarter"
-    if dur_ticks >= DIVISIONS//2:  return "eighth"
-    if dur_ticks >= DIVISIONS//4:  return "16th"
-    if dur_ticks >= DIVISIONS//8:  return "32nd"
-    return "64th"
+    """Pick a MusicXML note type for ``dur_ticks``.
+
+    Returns ``(type_name, is_dotted)``. A duration within ~12% of ``1.5 * base``
+    is emitted as a dotted note (``is_dotted=True``); otherwise the longest base
+    that fits is returned.
+    """
+    for name, base in _NOTE_TYPE_BASES:
+        dotted_ticks = base * 3 // 2  # 1.5 × base
+        tol = max(1, base // 8)       # ~12% tolerance
+        if abs(dur_ticks - dotted_ticks) <= tol:
+            return name, True
+    for name, base in _NOTE_TYPE_BASES:
+        if dur_ticks >= base:
+            return name, False
+    return "64th", False
+
+
+def add_type_and_dot(elem, dur_ticks):
+    """Append ``<type>`` and (if dotted) ``<dot/>`` children to ``elem``."""
+    name, is_dotted = duration_to_type(dur_ticks)
+    etree.SubElement(elem, "type").text = name
+    if is_dotted:
+        etree.SubElement(elem, "dot")
 
 def ensure_notations(note_elem):
     n = note_elem.find("notations")
@@ -345,7 +372,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
             etree.SubElement(r1, "rest")
             etree.SubElement(r1, "duration").text = str(take)
             etree.SubElement(r1, "voice").text = "1"
-            etree.SubElement(r1, "type").text = duration_to_type(take)
+            add_type_and_dot(r1, take)
             etree.SubElement(r1, "stem").text = "none"
 
             # tab rest
@@ -353,7 +380,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
             etree.SubElement(r2, "rest")
             etree.SubElement(r2, "duration").text = str(take)
             etree.SubElement(r2, "voice").text = "1"
-            etree.SubElement(r2, "type").text = duration_to_type(take)
+            add_type_and_dot(r2, take)
             etree.SubElement(r2, "stem").text = "none"
 
             cur_global += take
@@ -403,7 +430,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
 
             etree.SubElement(n, "duration").text = str(dur)
             etree.SubElement(n, "voice").text = "1"
-            etree.SubElement(n, "type").text = duration_to_type(dur)
+            add_type_and_dot(n, dur)
             etree.SubElement(n, "stem").text = "up"
 
         # ----- TAB STAFF (P2) -----
@@ -427,7 +454,7 @@ def jams_to_musicxml_standard_plus_tab_TWO_PARTS(
 
             etree.SubElement(note, "duration").text = str(dur)
             etree.SubElement(note, "voice").text = "1"
-            etree.SubElement(note, "type").text = duration_to_type(dur)
+            add_type_and_dot(note, dur)
             etree.SubElement(note, "stem").text = "none"
 
             notations = ensure_notations(note)
