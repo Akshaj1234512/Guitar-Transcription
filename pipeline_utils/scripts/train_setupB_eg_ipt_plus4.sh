@@ -4,11 +4,11 @@ set -euo pipefail
 # Train CNN-LSTM on EG-IPT Setup B + other 4 datasets (via unified_dataset_v4-2 mapping).
 # Output is saved under: models_cnn_lstm/setupB-eg_ipt-plus4/run-YYYYmmdd-HHMMSS/
 #
-# IMPORTANT: activate venv first from /home/hjpark:
-#   cd /home/hjpark && source .venv/bin/activate
+# IMPORTANT: activate venv first from ./code:
+#   cd ./code && source .venv/bin/activate
 
-BASE_DIR="/home/hjpark/expressive-technique/after-icassp-cnn-lstm"
-DATASET_ROOT="/data/hjpark/EG-IPT_setupB_plus4_14class"
+BASE_DIR="${BASE_DIR:-./code/expressive-technique/after-icassp-cnn-lstm}"
+DATASET_ROOT="${DATASET_ROOT:-./data/EG-IPT_setupB_plus4_14class}"
 
 python "$BASE_DIR/train_cnn_lstm.py" \
   --base_dir "$BASE_DIR" \

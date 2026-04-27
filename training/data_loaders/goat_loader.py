@@ -7,7 +7,7 @@ audio recordings (direct-input and 5 amp variants). We parse the .gp5/.gp files
 to extract (pitch, onset_sec, string, fret) tuples and match them to the
 corresponding audio file.
 
-Source: /data/shamakg/datasets/GOAT/data/item_N/
+Source: ./data/GOAT/data/item_N/
   - item_N.gp5 or item_N.gp (tablature)
   - item_N_amp_1.wav (audio, one of 5 amp variants)
   - item_N_fine_aligned.mid (audio-aligned MIDI, pitch only)
@@ -123,7 +123,7 @@ def transpose_to_standard(notes: List[Dict], tuning: Tuple[int, ...]) -> List[Di
     return transposed
 
 
-def load_goat_dataset(goat_root: str = '/data/shamakg/datasets/GOAT/data',
+def load_goat_dataset(goat_root: str = os.environ.get('GOAT_DIR', './data/GOAT/data'),
                       amp_variant: int = 1) -> List[Dict]:
     """Load GOAT dataset with string/fret annotations from GP files.
 

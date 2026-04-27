@@ -144,8 +144,8 @@ def main():
     out_dir.mkdir(exist_ok=True)
 
     print("Loading datasets...")
-    gaps_data = load_gaps_dataset('/data/akshaj/MusicAI/gaps_v1')
-    goat_data = load_goat_dataset('/data/shamakg/datasets/GOAT/data')
+    gaps_data = load_gaps_dataset(os.environ.get('GAPS_DIR', './data/gaps_v1'))
+    goat_data = load_goat_dataset(os.environ.get('GOAT_DIR', './data/GOAT/data'))
     guitartechs_data = load_guitartechs_dataset()
 
     # ── Build GT-MIDI datasets ────────────────────────────────────────

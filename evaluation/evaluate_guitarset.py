@@ -212,7 +212,7 @@ def evaluate_folder(pred_dir, gt_dir, suffix_to_remove):
 
 
 def main():
-    base_dir = Path('/data/akshaj/MusicAI/Music-AI/results')
+    base_dir = Path(os.environ.get('RESULTS_DIR', './results'))
     gt_dir   = Path('../GuitarSet/annotation')
 
     evaluation_targets = [

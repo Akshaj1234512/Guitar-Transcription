@@ -9,8 +9,8 @@ so inference matches training.
 
 Example:
   python scripts/infer_cnn_lstm.py \
-    --base_dir /home/hjpark/expressive-technique/after-icassp-cnn-lstm \
-    --model_dir /home/hjpark/expressive-technique/after-icassp-cnn-lstm/models_cnn_lstm/setupB-eg_ipt-plus4/run-20251212-231215 \
+    --base_dir ./code/expressive-technique/after-icassp-cnn-lstm \
+    --model_dir ./code/expressive-technique/after-icassp-cnn-lstm/models_cnn_lstm/setupB-eg_ipt-plus4/run-20251212-231215 \
     --input_dir /path/to/extracted_wavs \
     --out_json /path/to/preds.json
 

@@ -76,7 +76,7 @@ def parse_guitartechs_midi(midi_path: str) -> List[Dict]:
     return notes
 
 
-def load_guitartechs_dataset(root: str = '/data/hjpark/guitar-transcription-raw/guitar-techs',
+def load_guitartechs_dataset(root: str = os.environ.get('GUITARTECHS_DIR', './data/guitar-techs'),
                               flat_audio_dir: str = None) -> List[Dict]:
     """Load GuitarTechs dataset with string/fret annotations.
 

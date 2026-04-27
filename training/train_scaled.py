@@ -52,8 +52,8 @@ def main():
     )
 
     # Combined DadaGP + SynthTab manifests
-    train_manifest = Path("/data/akshaj/MusicAI/Music-AI/results/combined_train.jsonl")
-    val_manifest = Path("/data/akshaj/MusicAI/Music-AI/results/combined_val.jsonl")
+    train_manifest = Path(os.environ.get("RESULTS_DIR", "./results") + "/combined_train.jsonl")
+    val_manifest = Path(os.environ.get("RESULTS_DIR", "./results") + "/combined_val.jsonl")
 
     print(f"Loading training data from: {train_manifest}")
     train_dataset = SynthTabTokenDataset(

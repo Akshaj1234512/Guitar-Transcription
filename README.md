@@ -43,7 +43,28 @@ hf download shamakg/expressive-techniques-guitar --local-dir expressive-techniqu
 hf download shamakg/audiofret --local-dir string-fret --max-workers 1
 ```
 
-### 3. Transcribe a file
+### 3. (Optional) Configure data paths
+
+Training and evaluation scripts read dataset locations from environment variables, falling back to relative `./data/<dataset>` paths. To use defaults, place datasets under `./data/` in the repo root (e.g., `./data/GuitarSet`, `./data/EGDB`, `./data/gaps_v1`). To override, export the corresponding env var before running:
+
+```bash
+# Examples — set only the ones you need
+export GUITARSET_DIR=/path/to/GuitarSet/annotation
+export EGDB_DIR=/path/to/EGDB/annotation_jams
+export GAPS_DIR=/path/to/gaps_v1
+export GOAT_DIR=/path/to/GOAT/data
+export GUITARTECHS_DIR=/path/to/guitar-techs
+export IDMT_DIR=/path/to/IDMT-SMT-Guitar/IDMT-SMT-GUITAR_V2
+export DADAGP_DIR=/path/to/DadaGP-v1.1
+export IR_DIR=/path/to/consistency_IRs
+export RESULTS_DIR=./results               # outputs (default: ./results)
+export UNIFIED_TRAIN_DIR=/path/to/unified_dataset/train
+export UNIFIED_TEST_DIR=/path/to/unified_dataset/test
+```
+
+For inference only (Section 4 below), no datasets are required — only the pretrained models from Section 2.
+
+### 4. Transcribe a file
 
 ```bash
 python predict.py --audio_path /path/to/guitar.wav

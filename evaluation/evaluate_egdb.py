@@ -4,7 +4,7 @@ Evaluate EGDB predictions against EGDB ground truth JAMS.
 Same metrics as evaluate_guitarset.py but adapted for EGDB naming/structure.
 
 EGDB audio files are named like: 100.wav, 101.wav, ...
-EGDB GT JAMS are at: /data/akshaj/MusicAI/EGDB/annotation_jams/100.jams, ...
+EGDB GT JAMS are at: ./data/EGDB/annotation_jams/100.jams, ...
 Prediction JAMS stem matches the audio stem (no suffix to strip).
 """
 
@@ -211,7 +211,7 @@ def main():
     args = parser.parse_args()
 
     pred_base = Path(args.pred_base)
-    gt_dir = Path('/data/akshaj/MusicAI/EGDB/annotation_jams')
+    gt_dir = Path(os.environ.get('EGDB_DIR', './data/EGDB/annotation_jams'))
 
     amp_dirs = ['audio_DI', 'audio_Ftwin', 'audio_JCjazz', 'audio_Marshall', 'audio_Mesa', 'audio_Plexi']
 

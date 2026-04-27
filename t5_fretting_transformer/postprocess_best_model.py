@@ -436,7 +436,7 @@ def main():
     parser.add_argument('--alignment_window', type=int, default=5,
                         help='Alignment window for matching input to output')
     parser.add_argument('--guitarset_dir', type=str,
-                        default='/data/akshaj/MusicAI/GuitarSet/annotation',
+                        default=os.environ.get('GUITARSET_DIR', './data/GuitarSet/annotation'),
                         help='Path to GuitarSet annotation directory')
     parser.add_argument('--split_file', type=str,
                         default='splits/guitarset_h5_recording_splits_WITH_LEAKAGE.json',

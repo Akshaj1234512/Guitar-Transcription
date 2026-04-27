@@ -623,7 +623,7 @@ def main(jam_path, output_name = "final_tab.musicxml", bpm=120):
 # RUN
 # ----------------------------
 if __name__ == "__main__":
-    jams_file = "/data/shamakg/music_ai_pipeline/Music-AI/5_FinalPipeline/Dua Lipa - IDGAF - Cover (Fingerstyle Guitar).jams"
+    jams_file = "./pipeline/Music-AI/5_FinalPipeline/Dua Lipa - IDGAF - Cover (Fingerstyle Guitar).jams"
     jams_to_musicxml_standard_plus_tab_TWO_PARTS(
         jams_file,
         output_xml="final_standard_plus_tab.musicxml",

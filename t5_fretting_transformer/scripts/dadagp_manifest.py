@@ -335,7 +335,7 @@ if __name__ == "__main__":
     import sys
 
     # Test metadata loading
-    dadagp_path = "/data/andreaguz/DadaGP-v1.1"
+    dadagp_path = os.environ.get("DADAGP_DIR", "./data/DadaGP-v1.1")
 
     print("Loading DadaGP metadata...")
     metadata = load_dadagp_metadata(dadagp_path)
@@ -347,7 +347,7 @@ if __name__ == "__main__":
     print(f"Training: {train_count}, Validation: {val_count}")
 
     # Test extraction
-    test_file = "/data/andreaguz/DadaGP-v1.1/D/De mono/De Mono - Znow Jestes Ze Mna.gp4"
+    test_file = "./data/DadaGP-v1.1/D/De mono/De Mono - Znow Jestes Ze Mna.gp4"
     artist, song = extract_artist_song(test_file)
     print(f"\nTest extraction:")
     print(f"  File: {test_file}")

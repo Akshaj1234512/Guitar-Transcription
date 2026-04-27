@@ -158,7 +158,7 @@ class Augmentor(object):
 
     def __init__(
         self,
-        ir_path='/data/akshaj/MusicAI/consistency_IRs',
+        ir_path=os.environ.get('IR_DIR', './data/consistency_IRs'),
         sample_rate=16000,
         min_snr=25.0,
         max_snr=45.0,

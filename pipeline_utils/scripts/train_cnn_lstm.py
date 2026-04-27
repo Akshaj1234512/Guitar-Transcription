@@ -269,9 +269,9 @@ def build_model(seq_len, num_features, num_classes,
 def main():
     parser = argparse.ArgumentParser(description="Train CNN-LSTM for guitar techniques with cached temporal features")
     parser.add_argument('--base_dir', type=Path, default=Path(__file__).resolve().parent)
-    parser.add_argument('--train_dir', type=Path, default=Path('/data/hjpark/unified_dataset_v2_plus_augmentation/train'))
+    parser.add_argument('--train_dir', type=Path, default=Path(os.environ.get('UNIFIED_TRAIN_DIR', './data/unified_dataset/train')))
     parser.add_argument('--val_dir', type=Path, default=None, help='Optional explicit validation directory. If set, skips random val split.')
-    parser.add_argument('--test_dir', type=Path, default=Path('/data/hjpark/unified_dataset_v2/test'))
+    parser.add_argument('--test_dir', type=Path, default=Path(os.environ.get('UNIFIED_TEST_DIR', './data/unified_dataset/test')))
     parser.add_argument('--cache_dir', type=Path, default=None, help='Defaults to BASE_DIR/feature_cache_seq{seq_len}_{num_features}f')
     parser.add_argument('--use_feature_cache', action='store_true', default=True)
     parser.add_argument('--rebuild_cache', action='store_true', help='Force re-generate cache files')

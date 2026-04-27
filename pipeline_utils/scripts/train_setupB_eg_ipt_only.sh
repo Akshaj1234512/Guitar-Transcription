@@ -4,8 +4,8 @@ set -euo pipefail
 # Train CNN-LSTM on EG-IPT Setup B split (paper Table 2).
 # Output is saved under: models_cnn_lstm/setupB-eg_ipt-only/run-YYYYmmdd-HHMMSS/
 
-BASE_DIR="/home/hjpark/expressive-technique/after-icassp-cnn-lstm"
-DATASET_ROOT="/data/hjpark/EG-IPT_setupB_14class"
+BASE_DIR="${BASE_DIR:-./code/expressive-technique/after-icassp-cnn-lstm}"
+DATASET_ROOT="${DATASET_ROOT:-./data/EG-IPT_setupB_14class}"
 
 python3 "$BASE_DIR/train_cnn_lstm.py" \
   --base_dir "$BASE_DIR" \

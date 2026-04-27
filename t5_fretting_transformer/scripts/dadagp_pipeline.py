@@ -348,19 +348,19 @@ def main():
     parser.add_argument(
         "--input", "-i",
         type=str,
-        default="/data/andreaguz/DadaGP-v1.1",
+        default=os.environ.get("DADAGP_DIR", "./data/DadaGP-v1.1"),
         help="Path to DadaGP dataset directory"
     )
     parser.add_argument(
         "--output", "-o",
         type=str,
-        default="/data/andreaguz/fret_t5_clean/fret_t5/data/dadagp_processed",
+        default="./data/dadagp_processed",
         help="Path to output directory for processed files"
     )
     parser.add_argument(
         "--manifest-dir", "-m",
         type=str,
-        default="/data/andreaguz/fret_t5_clean/fret_t5/data",
+        default="./data",
         help="Path to write manifest files"
     )
     parser.add_argument(

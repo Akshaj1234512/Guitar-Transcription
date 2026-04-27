@@ -200,8 +200,8 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", default="checkpoints_audio_conditioned/best_string_classifier.pt")
-    parser.add_argument("--guitarset-gt", default="/data/akshaj/MusicAI/GuitarSet/annotation")
-    parser.add_argument("--egdb-gt", default="/data/akshaj/MusicAI/EGDB/annotation_jams")
+    parser.add_argument("--guitarset-gt", default=os.environ.get("GUITARSET_DIR", "./data/GuitarSet/annotation"))
+    parser.add_argument("--egdb-gt", default=os.environ.get("EGDB_DIR", "./data/EGDB/annotation_jams"))
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -233,7 +233,7 @@ def main():
         ("audio_mono-mic", "_mic"),
         ("audio_mix", "_mix"),
     ]:
-        audio_base = Path(f"/data/akshaj/MusicAI/GuitarSet/{audio_condition}")
+        audio_base = Path(f"./data/GuitarSet/{audio_condition}")
         if not audio_base.exists():
             continue
         print(f"\n--- {audio_condition} ---")
@@ -254,7 +254,7 @@ def main():
 
     egdb_results = {}
     for amp in ["audio_DI", "audio_Ftwin", "audio_JCjazz", "audio_Marshall", "audio_Mesa", "audio_Plexi"]:
-        audio_base = Path(f"/data/akshaj/MusicAI/EGDB/{amp}")
+        audio_base = Path(f"./data/EGDB/{amp}")
         if not audio_base.exists():
             continue
         print(f"\n--- {amp} ---")

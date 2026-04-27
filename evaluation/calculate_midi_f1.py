@@ -132,7 +132,7 @@ def evaluate_folder(pred_dir, gt_dir, suffix_to_remove):
 
 def main():
     # Base paths
-    base_dir = Path('/data/akshaj/MusicAI/Music-AI/results')
+    base_dir = Path(os.environ.get('RESULTS_DIR', './results'))
     gt_dir = Path('../GuitarSet/MIDIAnnotations') # Adjust if necessary based on where you run the script
     
     # Define the target folders and the specific string suffixes to strip from their files

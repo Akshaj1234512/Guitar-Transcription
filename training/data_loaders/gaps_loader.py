@@ -283,7 +283,7 @@ def load_gaps_dataset(gaps_dir: str) -> List[Dict]:
 
 
 if __name__ == '__main__':
-    dataset = load_gaps_dataset('/data/akshaj/MusicAI/gaps_v1')
+    dataset = load_gaps_dataset(os.environ.get('GAPS_DIR', './data/gaps_v1'))
     # Print some examples
     for d in dataset[:3]:
         print(f"\n{d['hash']}: {len(d['notes'])} notes")

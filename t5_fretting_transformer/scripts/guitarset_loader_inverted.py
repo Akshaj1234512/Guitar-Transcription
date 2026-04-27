@@ -377,7 +377,7 @@ def test_guitarset_tokenization():
     print("=" * 50)
 
     # 1. Find a GuitarSet JAMS file
-    guitarset_dir = Path("/data/akshaj/MusicAI/GuitarSet/annotation")
+    guitarset_dir = Path(os.environ.get("GUITARSET_DIR", "./data/GuitarSet/annotation"))
     jams_files = list(guitarset_dir.glob("*.jams"))
 
     if not jams_files:

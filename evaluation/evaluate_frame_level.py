@@ -193,8 +193,8 @@ def main():
     import warnings
     warnings.filterwarnings('ignore')
 
-    GS_GT = Path('/data/akshaj/MusicAI/GuitarSet/annotation')
-    EGDB_GT = Path('/data/akshaj/MusicAI/EGDB/annotation_jams')
+    GS_GT = Path(os.environ.get('GUITARSET_DIR', './data/GuitarSet/annotation'))
+    EGDB_GT = Path(os.environ.get('EGDB_DIR', './data/EGDB/annotation_jams'))
 
     GS_CLEAN_CONDS = [
         ('audio_hex_debleeded', '_hex_cln'),
@@ -205,7 +205,7 @@ def main():
     EGDB_AMPS = ['audio_DI', 'audio_Ftwin', 'audio_JCjazz', 'audio_Marshall', 'audio_Mesa', 'audio_Plexi']
 
     def eval_gs_clean(bd):
-        base = Path(f'/data/akshaj/MusicAI/Music-AI/results/{bd}')
+        base = Path(fos.environ.get('RESULTS_DIR', './results') + '/{bd}')
         if not base.exists():
             return None
         rs = []
@@ -220,13 +220,13 @@ def main():
         return {k: np.mean([r[k] for r in rs]) for k in rs[0].keys()}
 
     def eval_gs_noisy(bd):
-        d = Path(f'/data/akshaj/MusicAI/Music-AI/results/{bd}/acoustic_noisy')
+        d = Path(fos.environ.get('RESULTS_DIR', './results') + '/{bd}/acoustic_noisy')
         if not d.exists():
             return None
         return evaluate_dir(d, GS_GT, '_hex_cln')
 
     def eval_egdb_clean(bd):
-        base = Path(f'/data/akshaj/MusicAI/Music-AI/results/{bd}')
+        base = Path(fos.environ.get('RESULTS_DIR', './results') + '/{bd}')
         if not base.exists():
             return None
         rs = []
@@ -241,7 +241,7 @@ def main():
         return {k: np.mean([r[k] for r in rs]) for k in rs[0].keys()}
 
     def eval_egdb_noisy(bd):
-        d = Path(f'/data/akshaj/MusicAI/Music-AI/results/{bd}/electric_noisy')
+        d = Path(fos.environ.get('RESULTS_DIR', './results') + '/{bd}/electric_noisy')
         if not d.exists():
             return None
         return evaluate_dir(d, EGDB_GT)

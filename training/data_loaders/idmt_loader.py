@@ -197,7 +197,7 @@ def load_idmt_dataset(idmt_root: str) -> List[Dict]:
 
 
 if __name__ == '__main__':
-    dataset = load_idmt_dataset('/data/akshaj/MusicAI/IDMT-SMT-Guitar/IDMT-SMT-GUITAR_V2')
+    dataset = load_idmt_dataset(os.environ.get('IDMT_DIR', './data/IDMT-SMT-Guitar/IDMT-SMT-GUITAR_V2'))
     for d in dataset[:3]:
         print(f"\n{Path(d['audio_path']).name}: {d['instrument']}, {len(d['notes'])} notes")
         for n in d['notes'][:5]:

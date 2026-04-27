@@ -152,7 +152,7 @@ def train_string_classifier(
     print("Loading GAPS dataset...")
     gaps_data = load_gaps_dataset(gaps_dir)
     print("Loading GOAT dataset...")
-    goat_data = load_goat_dataset('/data/shamakg/datasets/GOAT/data')
+    goat_data = load_goat_dataset(os.environ.get('GOAT_DIR', './data/GOAT/data'))
     print("Loading GuitarTechs dataset...")
     guitartechs_data = load_guitartechs_dataset()
 
@@ -364,9 +364,9 @@ def main():
                         help="Pretrained T5 checkpoint for Phase 2")
     parser.add_argument("--string-classifier-checkpoint", type=str, default=None,
                         help="String classifier checkpoint to initialize audio extractor")
-    parser.add_argument("--gaps-dir", type=str, default="/data/akshaj/MusicAI/gaps_v1")
+    parser.add_argument("--gaps-dir", type=str, default=os.environ.get("GAPS_DIR", "./data/gaps_v1"))
     parser.add_argument("--idmt-dir", type=str,
-                        default="/data/akshaj/MusicAI/IDMT-SMT-Guitar/IDMT-SMT-GUITAR_V2")
+                        default=os.environ.get("IDMT_DIR", "./data/IDMT-SMT-Guitar/IDMT-SMT-GUITAR_V2"))
     parser.add_argument("--output-dir", type=str, default="checkpoints_audio_conditioned")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=64)
