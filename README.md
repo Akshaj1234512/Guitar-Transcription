@@ -24,6 +24,38 @@ conda env create -f environment.yml
 conda activate new_venv
 ```
 
+#### macOS (Apple Silicon / Intel)
+
+`environment.yml` was exported from a Linux + CUDA machine and pins many linux-64-only packages (`cuda-*`, `cudnn`, `nccl`, `triton`, `libgcc-ng`, `sysroot_linux-64`, `magma`, `mpich`, `jack`, `alsa-lib`, …). On macOS the conda solver will hang indefinitely trying to satisfy these. Use the manual install below instead — it gives you a CPU/MPS PyTorch build and the same Python-level dependencies.
+
+```bash
+# Fresh env with the same Python version
+conda create -n new_venv python=3.10 -y
+conda activate new_venv
+
+# PyTorch (CPU + MPS on Apple Silicon)
+pip install torch==2.5.1 torchaudio==2.5.1
+
+# Audio backends via Homebrew (provides ffmpeg, libsndfile, fluidsynth)
+brew install ffmpeg libsndfile fluid-synth portaudio
+
+# Project Python deps
+pip install \
+  numpy==2.2.6 scipy==1.15.3 pandas==2.3.3 scikit-learn==1.7.2 \
+  librosa==0.9.2 resampy==0.4.3 soundfile pyaudio \
+  pretty-midi==0.2.11 mido==1.2.10 mir-eval==0.8.2 jams==0.3.5 music21==9.9.1 \
+  pyfluidsynth==1.3.4 torchlibrosa==0.1.0 \
+  transformers==4.57.3 tokenizers==0.22.1 safetensors==0.7.0 huggingface-hub==0.36.0 \
+  tensorflow==2.21.0 tf-keras==2.21.0 keras==3.12.1 \
+  tqdm rich typer pyyaml pytest \
+  'git+https://github.com/CPJKU/madmom.git'
+```
+
+Notes:
+- CUDA-only training (Stage 1 noise augmentation, large-batch finetuning) won't run on Mac. Inference and small-scale evaluation work fine on CPU/MPS.
+- `madmom` must come from git master — the PyPI release breaks on Python 3.10+ / NumPy 2.
+- If `pyaudio` fails to build, run `brew install portaudio` first, then retry.
+
 ### 2. Download pretrained models
 
 All three stage models are hosted on HuggingFace:
