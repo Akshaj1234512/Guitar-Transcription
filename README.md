@@ -143,7 +143,3 @@ All numbers are **zero-shot** (no finetuning on GuitarSet or EGDB at any stage) 
 | Stage 3 | DadaGP, SynthTab (pretraining); GAPS+GOAT+Guitar-TECHS (finetune) | GuitarSet, EGDB |
 
 Neither GuitarSet nor EGDB is used for training at any stage.
-
-## Contributors
-
-Akshaj, Andrea, Peter, Shamak, Samhita, Jiachen, Robbie
